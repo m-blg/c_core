@@ -1,22 +1,35 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
 
 #ifndef DBG_PRINT
 #define DBG_PRINT 1
 #endif
 
 typedef uint64_t usize_t;
-typedef uint64_t isize_t;
 typedef uint8_t uchar_t;
-// typedef uchar_t bool;
+typedef int64_t isize_t;
+
+typedef uint64_t u64_t;
+typedef uint32_t u32_t;
+typedef uint16_t u16_t;
+typedef uint8_t  u8_t;
+typedef int64_t i64_t;
+typedef int32_t i32_t;
+typedef int16_t i16_t;
+typedef int8_t  i8_t;
+
+#define MAX_ALIGNMENT alignof(max_align_t)
 
 #ifndef DEFAULT_ALIGNMENT
 #define DEFAULT_ALIGNMENT alignof(max_align_t)
 #endif
+
 
 typedef enum AllocatorError AllocatorError;
 enum AllocatorError {
@@ -33,6 +46,7 @@ enum IteratorError {
     ITERATOR_ERROR_STOP_ITERATOR,
     ITERATOR_ERROR_COUNT
 };
+#define ITERATOR_ERROR(ERR) ((IteratorError)ITERATOR_ERROR_##ERR)
 
 typedef enum ErrorKind ErrorKind;
 typedef struct Error Error;
@@ -40,7 +54,7 @@ struct Error {
     union {
         AllocatorError allocator_error;
         IteratorError iterator_error;
-        isize_t value;
+        int value;
     };
     enum ErrorKind {
         ERROR_KIND_ALLOCATOR_ERROR,
@@ -66,6 +80,12 @@ unreacheble()  {
     exit(1); 
 }
 
+void print_stack_trace() {} // TODO(mbgl)
+// TODO(mblg): invoke gdb here
+void panic() { 
+    print_stack_trace(); 
+    exit(1); 
+}
 // typedef Error (*ExceptionHandler)(Error e);
 
 // #define RAISE(e) _ctx.raise((e))
@@ -86,23 +106,27 @@ unreacheble()  {
 
 #define TRY(expr) {                         \
     auto e = (expr);                        \
-    if (*(isize_t *)&e != 0) {              \
+    if (*(int *)&e != 0) {              \
         return e;                           \
     }                                       \
   }                                         \
 
 #define OR_RAISE(expr) {                         \
     auto e = (expr);                        \
-    if (*(isize_t *)&e != 0) {              \
+    if (*(int *)&e != 0) {              \
         return g_ctx.raise(error_cast(e));  \
     }                                       \
   }                                         \
 
-void print_stack_trace() {} // TODO(mbgl)
-// constexpr int foo() {return 3;}
 
 #define ASSERT(expr)                         \
     if (!(expr)) {                           \
+        panic();                             \
+    }
+
+#define ASSERTM(expr, msg)                   \
+    if (!(expr)) {                           \
+        fprintf(stderr, "%*s", (int)(sizeof(msg)-1), msg);\
         panic();                             \
     }
 
@@ -111,6 +135,9 @@ void print_stack_trace() {} // TODO(mbgl)
     if (*(isize_t *)&e != 0) {               \
         panic();                             \
     }                                        \
+
+/// @param x: Sized
+#define NULLIFY(x) memset(&(x), 0, sizeof(x))
 
 // design decisions:
 //  ergonomics first, then 'speed'
@@ -171,23 +198,74 @@ allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_p
     return ALLOCATOR_ERROR(OK);
 }
 
+/// @brief Allocates array of T of len *count*. 
+///    Each element is aligned with the alignment requirement for T.
 #define allocator_alloc_n(self, T, count, out_ptr) \
-    allocator_alloc(self, sizeof(T) * count, out_ptr)
+    allocator_alloc(self, sizeof(T) * count, alignof(T), out_ptr)
 
 #define allocator_alloc_zn(self, T, count, out_ptr) \
-    allocator_alloc_z(self, sizeof(T) * count, out_ptr)
+    allocator_alloc_z(self, sizeof(T) * count, alignof(T), out_ptr)
 
 
-// TODO(mblg): invoke gdb here
-void panic() { 
-    print_stack_trace(); 
-    exit(1); 
+
+/// @brief V
+/// @param value 
+/// @return 
+/// @paragraph Proof
+/// 1. if value is a power of 2:
+/// bin(value) = 0{0,m}10{0,n}
+/// bin(value-1) = 0{0,m}01{0,n}
+/// bin(value & (value-1)) = 0{1,m+n+1} = bin(0)
+///
+/// 2. if value is Not a power of 2:
+/// bin(value) = 0{0,m}1(0|1){0,k}10{0,n}
+/// bin(value-1) = 0{0,m}1(0|1){0,k}01{0,n}
+/// bin(value & (value-1)) = 0{0,m}1(0|1){0,k}0{1,n} != bin(0)
+///
+/// Thus by cases: (value & (value-1)) == 0 iff value is power of 2
+INLINE
+bool
+is_power_of_two(usize_t value) {
+    return (value & (value - 1)) == 0;
+}
+
+INLINE
+void *
+align_forward(void *ptr, usize_t alignment) {
+    return (void *)((u8_t *)ptr + ((uintptr_t)ptr % alignment));
+}
+
+INLINE
+void *
+ptr_shift(void *ptr, isize_t offset) {
+    return (void *)((u8_t *)ptr + offset);
+}
+
+/// size1, size2 - adhere to sizeof semantics
+/// align1, align2 - adhere to alignof semantics
+AllocatorError 
+alloc_two(usize_t size1, usize_t align1, 
+          usize_t size2, usize_t align2,
+          Allocator allocator[static 1], 
+          void **out1, void **out2) 
+{
+    void *p = nullptr;
+    usize_t pad = (align2 > align1) ? align2 - align1 : 0;
+    TRY(allocator_alloc(allocator, size1 + pad + size2, align1, &p));
+    *out1 = p;
+    *out2 = align_forward(ptr_shift(p, size1), align2);
+    return ALLOCATOR_ERROR(OK);
 }
 
 
 AllocatorError
 c_alloc(void *self, usize_t size, usize_t alignment, void **out_ptr) {
     // malloc return pointers with alignof(max_align_t), so alignment adjustments are not required
+    // for alignment <= MAX_ALIGNMENT
+    if (alignment > MAX_ALIGNMENT) {
+        // TODO
+        unimplemented();
+    }
     void *p = malloc(size);
     if (p == nullptr) {
         RAISE(ALLOCATOR_ERROR(MEM_ALLOC));
@@ -199,6 +277,10 @@ c_alloc(void *self, usize_t size, usize_t alignment, void **out_ptr) {
 
 AllocatorError
 c_resize(void *self, usize_t size, usize_t alignment, void **in_out_ptr) {
+    if (alignment > MAX_ALIGNMENT) {
+        // TODO
+        unimplemented();
+    }
     void *p = realloc(*in_out_ptr, size);
     if (p == nullptr) {
         RAISE(ALLOCATOR_ERROR(MEM_ALLOC));
@@ -272,3 +354,18 @@ void *(name)(void *arg) {                        \
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 typedef bool (*PredicateFn)(void*);
+
+#define for_in_range(i, from, to, body) for (auto i = (from); i < (to); i++) {body}
+
+
+
+#define struct_def(name, fields) \
+typedef struct name name;         \
+struct name fields;               \
+
+#define enum_def(name, ...) \
+typedef enum name name;         \
+enum name {__VA_ARGS__};               \
+
+
+#define printlnf(fmt, ...) printf(fmt"\n", __VA_ARGS__)

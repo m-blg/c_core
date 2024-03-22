@@ -1,4 +1,4 @@
-
+#pragma once
 
 #define iter_next(iter) _Generic((*iter),         \
     ListIter: list_iter_next(iter)        \
@@ -30,7 +30,7 @@
     out_item = nullptr;                                                         \
 }                                                                               \
 
-ITER_IMPL(__prefix, Iter, Item)                                                 \
+#define ITER_IMPL(__prefix, Iter, Item)                                                 \
 Item *                                                                          \
 __prefix##_find(Iter *iter, bool (*pred)(Item*)) {                              \
     for_in(iter, node, {                                                        \

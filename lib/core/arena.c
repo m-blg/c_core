@@ -32,11 +32,8 @@ arena_chunk_contains(ArenaChunk *self, uint8_t *ptr) {
 typedef struct Arena Arena;
 struct Arena {
     usize_t chunk_size;
-    // usize_t chunk_count;
-    // ArenaChunk *head;
-    // ArenaChunk *tail;
-    List(ArenaChunk) chunks;
-    Allocator *allocator;
+    list_T(ArenaChunk) chunks;
+    Allocator allocator;
 };
 
 typedef struct ArenaAllocator_dyn ArenaAllocator_dyn;
@@ -80,9 +77,9 @@ LIST_IMPL_PROCS(arena_chunk_list_##T,                                      \
 
 
 AllocatorError                        
-arena_allocator_alloc(Arena[static 1], usize_t , void **);
+arena_allocator_alloc(Arena[static 1], usize_t, usize_t, void **);
 AllocatorError
-arena_allocator_resize(Arena[static 1] , void **, usize_t );
+arena_allocator_resize(Arena[static 1], usize_t, usize_t, void **);
 void
 arena_allocator_free(Arena[static 1], void **);
 
@@ -109,7 +106,7 @@ arena_init(
         .tail = chunk,
         .allocator = allocator,
     };
-    return ERROR_OK;
+    return ALLOCATOR_ERROR(OK);
 }
 
 void
@@ -140,7 +137,7 @@ INLINE
 Allocator
 arena_allocator(Arena self[static 1]) {
     AllocatorError                        
-    _arena_allocator_alloc(void *self, usize_t data_size, uint8_t *out_ptr[data_size]) 
+    _arena_allocator_alloc(void *self, usize_t data_size, uint8_t *out_ptr[data_size]) {
         return arena_allocator_alloc((Arena *)self, data_size, out_ptr);
     }
 
