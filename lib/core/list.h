@@ -1,5 +1,9 @@
-#pragma once
+#ifdef CORE_IMPL
 #define CORE_LIST_IMPL
+#endif // CORE_IMPL
+
+#ifndef CORE_LIST_H
+#define CORE_LIST_H
 
 #include "core/core.c"
 #include "core/fmt.c"
@@ -31,6 +35,10 @@ struct_def(ListIterVES, {
     usize_t len;
 })
 
+#endif // CORE_LIST_H
+
+#if defined(CORE_LIST_IMPL) && !defined(CORE_LIST_I)
+#define CORE_LIST_I
 void
 list_init(Self *self, Allocator *allocator) {
     self->_head_ = nullptr;
@@ -65,6 +73,8 @@ list_push_node(Self *self, Node *node) {
     node->_prev_ = prev;
     self->len += 1;
 }
+
+#endif // CORE_LIST_IMPL
 
 // #define DBG_PRINT 1
 // #ifdef DBG_PRINT

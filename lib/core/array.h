@@ -1,6 +1,26 @@
-#pragma once
+#ifdef CORE_IMPL
+#define CORE_ARRAY_IMPL
+#endif // CORE_IMPL
 
-#include "core/core.c"
+#ifdef CORE_ARRAY_IMPL
+#undef CORE_ARRAY_IMPL
+
+#define CORE_ARRAY_SLICE_IMPL
+#define CORE_ARRAY_DARR_IMPL
+#define CORE_ARRAY_RING_BUFF_IMPL
+
+#define CORE_CORE_IMPL
+#include "core/core.h"
+#endif // CORE_ARRAY_IMPL
+
+// =======================
+#ifndef CORE_ARRAY_SLICE_H
+#define CORE_ARRAY_SLICE_H
+
+#define CORE_NO_IMPL
+#include "core/core.h"
+#undef CORE_NO_IMPL
+// #include "core/string.h"
 
 struct_def(SliceVES, { 
     void *ptr;             
@@ -67,6 +87,26 @@ slice_end(slice_t self[static 1]) {
 AllocatorError
 slice_new_in(usize_t el_size, usize_t alignment, 
              usize_t len, Allocator alloc[static 1], 
+             slice_t *out_self);
+#define slice_new_in_T(T, len, alloc, out_self) \
+    slice_new_in(sizeof(T), alignof(T), len, alloc, out_self)
+
+void
+slice_free(slice_t self[static 1], Allocator alloc[static 1]);
+/// @param out_slice should be preallocated
+void
+slice_copy_data(slice_t *self, slice_t *out_slice);
+
+#endif // CORE_ARRAY_SLICE_H
+
+
+// =======================
+#if CORE_IMPL_GUARD(CORE_ARRAY_SLICE)
+#define CORE_ARRAY_SLICE_I
+
+AllocatorError
+slice_new_in(usize_t el_size, usize_t alignment, 
+             usize_t len, Allocator alloc[static 1], 
              slice_t *out_self) 
 { 
     void *ptr;                                                    
@@ -79,8 +119,6 @@ slice_new_in(usize_t el_size, usize_t alignment,
     };                                                         
     return ALLOCATOR_ERROR(OK);                                           
 }
-#define slice_new_in_T(T, len, alloc, out_self) \
-    slice_new_in(sizeof(T), alignof(T), len, alloc, out_self)
 
 void
 slice_free(slice_t self[static 1], Allocator alloc[static 1]) {
@@ -137,10 +175,12 @@ slice_copy_data(slice_t *self, slice_t *out_slice) {
 // // }
 
 // #endif
+#endif // CORE_ARRAY_SLICE_IMPL
 
-/// @brief allowes for type annotation for variable element size type
-#define DArrVES(T) DArrVES
 
+// =======================
+#ifndef CORE_ARRAY_DARR_H
+#define CORE_ARRAY_DARR_H
 /// @brief dynamic array with variable element size
 /// @param el_size should be equal to sizeof(T), such that
 ///     you can get arr[n+1] = (uint8_t *)arr[n] + sizeof(T),
@@ -150,6 +190,9 @@ struct_def(DArrVES, {
     usize_t len;        
     Allocator allocator;
 })
+
+/// @brief allowes for type annotation for variable element size type
+#define DArrVES_T(T) DArrVES
 
 // INLINE
 // void
@@ -207,12 +250,15 @@ darr_get_i(darr_t self, isize_t index) {
 }
 #define darr_get_iT(T, self, index) ((T *)darr_get_i(self, index))
 
-// INLINE
-// void
-// darr_move(darr_t self, darr_t out) {
-//     *out = self;
-//     out->data.ptr = 
-// }
+#define darr_new_cap_in_T(T, cap, allocator, out_self)\
+    darr_new_cap_in(sizeof(T), alignof(T), cap, allocator, out_self)
+
+#endif // CORE_ARRAY_DARR_H
+
+
+// =======================
+#if CORE_IMPL_GUARD(CORE_ARRAY_DARR)
+#define CORE_ARRAY_DARR_I
 
 AllocatorError 
 darr_new_cap_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator allocator[static 1], darr_t out_self[static 1]) {
@@ -245,8 +291,7 @@ darr_new_cap_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator alloc
     };
     return ALLOCATOR_ERROR(OK);
 }
-#define darr_new_cap_in_T(T, cap, allocator, out_self)\
-    darr_new_cap_in(sizeof(T), alignof(T), cap, allocator, out_self)
+
 void 
 darr_free(darr_t self[static 1]) {
     auto alloc = (*self)->allocator; // move out allocator
@@ -305,7 +350,12 @@ darr_i32_dbg_print(darr_t self) {
     #undef PAD
 }
 
+#endif // CORE_ARRAY_DARR_IMPL
+
 // ring buffer
+
+#ifndef CORE_ARRAY_RING_BUFF_H
+#define CORE_ARRAY_RING_BUFF_H
 
 struct_def(RingBuffVES, {                                                                                                    
     slice_t data;                                                                                                  
@@ -323,6 +373,18 @@ typedef RingBuffVES *ring_buff_t;
 #define ring_buff_end(self) slice_end(&self->data)
 #define ring_buff_cap(self) (self->data.len)
 #define ring_buff_len(self) (self->len)
+
+INLINE
+void *                                                                                                                 
+ring_buff_last(ring_buff_t self) {                                                              
+    return self->e_cursor;                                                                                         
+}                                                                                                                   
+
+#endif // CORE_ARRAY_RING_BUFF_H
+
+// =======================
+#if CORE_IMPL_GUARD(CORE_ARRAY_RING_BUFF)
+#define CORE_ARRAY_RING_BUFF_I
 
 AllocatorError                                                                                                               
 ring_buff_new_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator alloc[static 1], ring_buff_t *out_self) {                             
@@ -352,11 +414,6 @@ ring_buffer_free(ring_buff_t self[static 1]) {
     allocator_free(&alloc, (void **)self);
 }
                                                                                                                     
-INLINE
-void *                                                                                                                 
-ring_buff_last(ring_buff_t self) {                                                              
-    return self->e_cursor;                                                                                         
-}                                                                                                                   
                                                                                                                     
 /// @param[in, out] self                                                                                             
 /// @param[in] value                                                                                                 
@@ -372,5 +429,7 @@ ring_buff_push(ring_buff_t self, void *value) {
     memcpy(self->e_cursor, value, self->data.el_size);                                                                         
     self->len += 1;
 }                                                                                                                   
+
+#endif // CORE_ARRAY_RING_BUFF_IMPL
 
                                                                                  

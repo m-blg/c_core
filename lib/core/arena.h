@@ -1,7 +1,12 @@
-#pragma once
+#ifdef CORE_IMPL
+#define CORE_ARENA_IMPL
+#endif // CORE_IMPL
 
-#include "core/core.c"
-#include "core/list.c"
+#ifndef CORE_ARENA_H
+#define CORE_ARENA_H
+
+#include "core/core.h"
+#include "core/list.h"
 
 struct ArenaChunk {
     struct ArenaChunk *next;
@@ -21,13 +26,9 @@ typedef struct ArenaChunk ArenaChunk;
     ((chunk)->data + (chunk)->data_size)
 
 void
-arena_chunk_reset(ArenaChunk *self) {
-    self->cursor = self->data;
-}
+arena_chunk_reset(ArenaChunk *self);
 bool
-arena_chunk_contains(ArenaChunk *self, uint8_t *ptr) {
-    return self->data <= ptr && ptr < ARENA_CHUNK_END(self);
-}
+arena_chunk_contains(ArenaChunk *self, uint8_t *ptr);
 
 typedef struct Arena Arena;
 struct Arena {
@@ -41,40 +42,6 @@ struct ArenaAllocator_dyn {
     Allocator_Vtable _vtable;
     Arena data;
 }
-// typedef struct ArenaAllocator_dyn ArenaAllocator_dyn;
-// struct ArenaAllocator_dyn {
-//     Allocator_Vtable _vtable;
-//     Arena *data; // = &self.arena
-//     Arena arena;
-// }
-
-INLINE
-usize_t
-arena_chunk_count(static Arena *self) {
-    return self->chunk.len;
-}
-
-LIST_IMPL(arena, Arena, ArenaChunk, chunk_count)
-LIST_IMPL_PROCS(arena_chunk_list_##T,                                      \
-                void,                                             \
-                Arena,                                       \
-                    head,                                      \
-                    tail,                                      \
-                    len,                                       \
-                    allocator,                                 \
-                ArenaChunk,                                   \
-                    next                                       \
-                )                                              \
-// typedef struct {
-//     AllocatorAllocFn alloc;
-//     AllocatorResizeFn resize;
-//     AllocatorFreeFn free;
-
-//     Arena *arena;
-// } ArenaAllocator;
-// NOTE: instead of List object 
-// create List protocol for generating implementation for this type
-
 
 AllocatorError                        
 arena_allocator_alloc(Arena[static 1], usize_t, usize_t, void **);
@@ -85,6 +52,26 @@ arena_allocator_free(Arena[static 1], void **);
 
 #define ARENA_DEFAULT_CHUNK_SIZE 1024
 
+
+INLINE
+usize_t
+arena_chunk_count(static Arena *self) {
+    return self->chunk.len;
+}
+
+void
+arena_chunk_reset(ArenaChunk *self) {
+    self->cursor = self->data;
+}
+bool
+arena_chunk_contains(ArenaChunk *self, uint8_t *ptr) {
+    return self->data <= ptr && ptr < ARENA_CHUNK_END(self);
+}
+
+#endif // CORE_ARENA_H
+
+#if defined(CORE_ARENA_IMPL) && !defined(CORE_ARENA_I)
+#define CORE_ARENA_I
 // TODO: test this
 AllocatorError
 arena_init(
@@ -195,3 +182,5 @@ void
 arena_allocator_free(Arena self[static 1], void **in_out_ptr) {
     *in_out_ptr = nullptr;
 }
+
+#endif // CORE_ARENA_IMPL

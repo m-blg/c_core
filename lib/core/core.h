@@ -1,4 +1,9 @@
-#pragma once
+#ifdef CORE_IMPL
+#define CORE_CORE_IMPL
+#endif // CORE_IMPL
+
+#ifndef CORE_CORE_H
+#define CORE_CORE_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -31,21 +36,27 @@ typedef int8_t  i8_t;
 #endif
 
 
-typedef enum AllocatorError AllocatorError;
-enum AllocatorError {
+#define struct_def(name, fields) \
+typedef struct name name;         \
+struct name fields;               \
+
+#define enum_def(name, ...) \
+typedef enum name name;         \
+enum name {__VA_ARGS__};               \
+
+
+enum_def(AllocatorError,
     ALLOCATOR_ERROR_OK,
     ALLOCATOR_ERROR_MEM_ALLOC,
     ALLOCATOR_ERROR_COUNT
-};
-
+)
 #define ALLOCATOR_ERROR(ERR) ((AllocatorError)ALLOCATOR_ERROR_##ERR)
 
-typedef enum IteratorError IteratorError;
-enum IteratorError {
+enum_def(IteratorError,
     ITERATOR_ERROR_OK,
     ITERATOR_ERROR_STOP_ITERATOR,
     ITERATOR_ERROR_COUNT
-};
+)
 #define ITERATOR_ERROR(ERR) ((IteratorError)ITERATOR_ERROR_##ERR)
 
 typedef enum ErrorKind ErrorKind;
@@ -65,30 +76,21 @@ struct Error {
 
 #define INLINE static inline __attribute((always_inline))
 
-// __attribute__ ((noreturn))
-[[noreturn]]
-void 
-unimplemented()  { 
-    perror("unimplemented");
-    exit(1); // TODO: exit callback
-}
 
 [[noreturn]]
 void 
-unreacheble()  { 
-    perror("unreacheble");
-    exit(1); 
-}
+unimplemented();
+[[noreturn]]
+void 
+unreacheble();
 
-void print_stack_trace() {} // TODO(mbgl)
-// TODO(mblg): invoke gdb here
-void panic() { 
-    print_stack_trace(); 
-    exit(1); 
-}
-// typedef Error (*ExceptionHandler)(Error e);
+void 
+print_stack_trace();
+[[noreturn]]
+void 
+panic();
 
-// #define RAISE(e) _ctx.raise((e))
+
 
 #define error_cast(e)                                                                              \
     _Generic((e),                                                                                  \
@@ -164,39 +166,19 @@ struct Allocator {
 };
 
 // opaque type instead of Allocator *
-typedef AllocatorError (*AllocatorAllocAlignFn)(void *, usize_t, usize_t, void **);
-typedef AllocatorError (*AllocatorResizeAlignFn)(void *, usize_t, usize_t, void **);
-typedef void (*AllocatorFreeFn)(void *, void **);
+typedef AllocatorError (AllocatorAllocAlignFn)(void *, usize_t, usize_t, void **);
+typedef AllocatorError (AllocatorResizeAlignFn)(void *, usize_t, usize_t, void **);
+typedef void (AllocatorFreeFn)(void *, void **);
 
-__thread struct {
-    Allocator *global_alloc;
-    // TODO
-    void (*raise)(Error);
-} g_ctx;
-
-#define NonNullPtr [static 1]
-
-// Can not do allocations without alignment, so it is required
 AllocatorError
-allocator_alloc(Allocator* self, usize_t size, usize_t alignment, void **out_ptr) {
-    return self->_vtable.alloc(self->data, size, alignment, out_ptr);
-}
+allocator_alloc(Allocator* self, usize_t size, usize_t alignment, void **out_ptr);
 AllocatorError
-allocator_resize(Allocator* self, usize_t size, usize_t alignment, void **in_out_ptr) {
-    return self->_vtable.resize(self->data, size, alignment, in_out_ptr);
-}
+allocator_resize(Allocator* self, usize_t size, usize_t alignment, void **in_out_ptr);
 /// @param[in, out] ptr: NonNull
 void 
-allocator_free(Allocator* self, void **ptr) {
-    self->_vtable.free(self->data, ptr);
-}
-
+allocator_free(Allocator* self, void **ptr);
 AllocatorError
-allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_ptr) {
-    TRY(self->_vtable.alloc(self, size, alignment, out_ptr));
-    memset((void*)*out_ptr, 0, size);
-    return ALLOCATOR_ERROR(OK);
-}
+allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_ptr);
 
 /// @brief Allocates array of T of len *count*. 
 ///    Each element is aligned with the alignment requirement for T.
@@ -206,7 +188,13 @@ allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_p
 #define allocator_alloc_zn(self, T, count, out_ptr) \
     allocator_alloc_z(self, sizeof(T) * count, alignof(T), out_ptr)
 
-
+/// size1, size2 - adhere to sizeof semantics
+/// align1, align2 - adhere to alignof semantics
+AllocatorError 
+alloc_two(usize_t size1, usize_t align1, 
+          usize_t size2, usize_t align2,
+          Allocator allocator[static 1], 
+          void **out1, void **out2);
 
 /// @brief V
 /// @param value 
@@ -241,89 +229,6 @@ ptr_shift(void *ptr, isize_t offset) {
     return (void *)((u8_t *)ptr + offset);
 }
 
-/// size1, size2 - adhere to sizeof semantics
-/// align1, align2 - adhere to alignof semantics
-AllocatorError 
-alloc_two(usize_t size1, usize_t align1, 
-          usize_t size2, usize_t align2,
-          Allocator allocator[static 1], 
-          void **out1, void **out2) 
-{
-    void *p = nullptr;
-    usize_t pad = (align2 > align1) ? align2 - align1 : 0;
-    TRY(allocator_alloc(allocator, size1 + pad + size2, align1, &p));
-    *out1 = p;
-    *out2 = align_forward(ptr_shift(p, size1), align2);
-    return ALLOCATOR_ERROR(OK);
-}
-
-
-AllocatorError
-c_alloc(void *self, usize_t size, usize_t alignment, void **out_ptr) {
-    // malloc return pointers with alignof(max_align_t), so alignment adjustments are not required
-    // for alignment <= MAX_ALIGNMENT
-    if (alignment > MAX_ALIGNMENT) {
-        // TODO
-        unimplemented();
-    }
-    void *p = malloc(size);
-    if (p == nullptr) {
-        RAISE(ALLOCATOR_ERROR(MEM_ALLOC));
-    }
-
-    *out_ptr = p;
-    return ALLOCATOR_ERROR(OK);
-}
-
-AllocatorError
-c_resize(void *self, usize_t size, usize_t alignment, void **in_out_ptr) {
-    if (alignment > MAX_ALIGNMENT) {
-        // TODO
-        unimplemented();
-    }
-    void *p = realloc(*in_out_ptr, size);
-    if (p == nullptr) {
-        RAISE(ALLOCATOR_ERROR(MEM_ALLOC));
-    }
-
-    *in_out_ptr = p;
-    return ALLOCATOR_ERROR(OK);
-}
-void
-c_free(void *self, void **in_out_ptr) {
-    free(*in_out_ptr);
-    *in_out_ptr = nullptr;
-}
-// typedef struct Dyn_C_Allocator Dyn_C_Allocator;
-// struct Dyn_C_Allocator {
-//     Allocator_Vtable _vtable;
-//     Allocator *data;
-// };
-
-Allocator
-c_allocator() {
-    return (Allocator) {
-        ._vtable = (Allocator_Vtable) {
-            .alloc = c_alloc,
-            .resize = c_resize,
-            .free = c_free,
-        },
-        .data = nullptr,
-    };
-}
-
-void
-default_raise(Error e) { }
-
-Allocator g_c_allocator;
-
-void
-ctx_init_default() {
-    g_c_allocator = c_allocator();
-    g_ctx.global_alloc = (Allocator*)&g_c_allocator;
-    g_ctx.raise = default_raise;
-}
-
 #define SWAP(x, y) \
 {                  \
     auto t = (y);  \
@@ -334,12 +239,12 @@ ctx_init_default() {
 /// @param[in] allocator: Allocator*
 /// @param[out] p: T**
 #define NEW_IN(allocator, p) allocator_alloc((allocator), sizeof(typeof(**(p))), alignof(typeof(**(p))), (void **)(p))
-#define NEW(p) NEW_IN(g_ctx.global_alloc, p)
+#define NEW(p) NEW_IN(&g_ctx.global_alloc, p)
 
 /// @param[in] allocator: Allocator*
 /// @param[out] p: T**
 #define FREE_IN(allocator, p) allocator_free((allocator), (void **)(p))
-#define FREE(p) FREE_IN(g_ctx.global_alloc, p)
+#define FREE(p) FREE_IN(&g_ctx.global_alloc, p)
 
 
 // in C you can't process expressions, only build ones
@@ -359,13 +264,100 @@ typedef bool (*PredicateFn)(void*);
 
 
 
-#define struct_def(name, fields) \
-typedef struct name name;         \
-struct name fields;               \
-
-#define enum_def(name, ...) \
-typedef enum name name;         \
-enum name {__VA_ARGS__};               \
-
-
 #define printlnf(fmt, ...) printf(fmt"\n", __VA_ARGS__)
+
+#define CORE_IMPL_GUARD(SECTION) \
+    defined(SECTION##_IMPL) &&   \
+    !defined(SECTION##_I) &&     \
+    !defined(CORE_NO_IMPL)        \
+
+
+#define CORE_NO_IMPL
+#include "runtime.h"
+#undef CORE_NO_IMPL
+
+#endif // CORE_CORE_H
+
+// ===========================
+#if CORE_IMPL_GUARD(CORE_CORE)
+#define CORE_CORE_I
+
+#define CORE_RUNTIME_IMPL
+#include "runtime.h"
+
+// __attribute__ ((noreturn))
+[[noreturn]]
+void 
+unimplemented()  { 
+    perror("unimplemented");
+    exit(1); // TODO: exit callback
+}
+
+[[noreturn]]
+void 
+unreacheble()  { 
+    perror("unreacheble");
+    exit(1); 
+}
+
+void 
+print_stack_trace() {} // TODO(mbgl)
+// TODO(mblg): invoke gdb here
+[[noreturn]]
+void 
+panic() { 
+    print_stack_trace(); 
+    exit(1); 
+}
+// typedef Error (*ExceptionHandler)(Error e);
+
+// #define RAISE(e) _ctx.raise((e))
+
+// Can not do allocations without alignment, so it is required
+AllocatorError
+allocator_alloc(Allocator* self, usize_t size, usize_t alignment, void **out_ptr) {
+    return self->_vtable.alloc(self->data, size, alignment, out_ptr);
+}
+AllocatorError
+allocator_resize(Allocator* self, usize_t size, usize_t alignment, void **in_out_ptr) {
+    return self->_vtable.resize(self->data, size, alignment, in_out_ptr);
+}
+/// @param[in, out] ptr: NonNull
+void 
+allocator_free(Allocator* self, void **ptr) {
+    self->_vtable.free(self->data, ptr);
+}
+
+AllocatorError
+allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_ptr) {
+    TRY(self->_vtable.alloc(self, size, alignment, out_ptr));
+    memset((void*)*out_ptr, 0, size);
+    return ALLOCATOR_ERROR(OK);
+}
+
+
+
+/// size1, size2 - adhere to sizeof semantics
+/// align1, align2 - adhere to alignof semantics
+AllocatorError 
+alloc_two(usize_t size1, usize_t align1, 
+          usize_t size2, usize_t align2,
+          Allocator allocator[static 1], 
+          void **out1, void **out2) 
+{
+    void *p = nullptr;
+    usize_t pad = (align2 > align1) ? align2 - align1 : 0;
+    TRY(allocator_alloc(allocator, size1 + pad + size2, align1, &p));
+    *out1 = p;
+    *out2 = align_forward(ptr_shift(p, size1), align2);
+    return ALLOCATOR_ERROR(OK);
+}
+
+#endif // CORE_CORE_IMPL
+
+// #ifdef CORE_IMPL
+
+// #define CORE_ARRAY_IMPL
+// #include "core/array.h"
+
+// #endif // CORE_IMPL

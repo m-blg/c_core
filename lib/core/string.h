@@ -1,7 +1,12 @@
-#pragma once
+#ifdef CORE_IMPL
+#define CORE_STRING_IMPL
+#endif // CORE_IMPL
 
-#include "core/core.c"
-#include "core/iter.c"
+#ifndef CORE_STRING_H
+#define CORE_STRING_H
+
+#include "core/core.h"
+#include "core/iter.h"
 
 
 // #define NULL (void *)0
@@ -28,6 +33,32 @@ typedef struct {
 } CharUTF8;
 
 typedef uint32_t rune_t;
+
+IteratorError 
+get_next_rune(const CharUTF8 *ptr, const CharUTF8 **out_ptr);
+rune_t
+utf8_decode(const CharUTF8 *ptr);
+
+/// Assumed to own memory
+typedef struct {
+    CharUTF8 *ptr;
+    usize_t byte_cap;
+    usize_t byte_len; // in bytes
+    // usize_t rune_len; considered unneeded 
+    Allocator *allocator;
+} String;
+
+/// Assumed to not own memory
+typedef struct {
+    CharUTF8 *ptr;
+    usize_t byte_len; // in bytes
+    // usize_t rune_len;
+} str_t;
+
+#endif // CORE_STRING_H 
+
+#if defined(CORE_STRING_IMPL) && !defined(CORE_STRING_I)
+#define CORE_STRING_I
 
 IteratorError 
 get_next_rune(const CharUTF8 *ptr, const CharUTF8 **out_ptr) {
@@ -66,21 +97,6 @@ utf8_decode(const CharUTF8 *ptr)
 
 // #define STRING_FREE(ptr)
 
-/// Assumed to own memory
-typedef struct {
-    CharUTF8 *ptr;
-    usize_t byte_cap;
-    usize_t byte_len; // in bytes
-    // usize_t rune_len; considered unneeded 
-    Allocator *allocator;
-} String;
-
-/// Assumed to not own memory
-typedef struct {
-    CharUTF8 *ptr;
-    usize_t byte_len; // in bytes
-    // usize_t rune_len;
-} str_t;
 
 // #define BUFF_T(T)      
 // typedef struct {       
@@ -253,3 +269,5 @@ string_from_in(str_t s, Allocator *a, String *out_self) {
     out_self->byte_len = s.byte_len;
     return ALLOCATOR_ERROR(OK);
 }
+
+#endif // CORE_STRING_IMPL
