@@ -1,14 +1,12 @@
-#ifdef CORE_IMPL
-#define CORE_RUNTIME_IMPL
-#endif // CORE_IMPL
+// #ifdef CORE_IMPL
+// #define CORE_RUNTIME_IMPL
+// #endif // CORE_IMPL
 
 #ifndef CORE_RUNTIME_H
 #define CORE_RUNTIME_H
 
-#define CORE_NO_IMPL
 #include "core/core.h"
 #include "core/io.h"
-#undef CORE_NO_IMPL
 
 Allocator g_c_allocator;
 

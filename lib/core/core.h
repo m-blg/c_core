@@ -1,4 +1,14 @@
 #ifdef CORE_IMPL
+#undef CORE_IMPL
+
+#include "core/runtime.h"
+#define CORE_RUNTIME_IMPL
+#include "core/runtime.h"
+#define CORE_IO_IMPL
+#include "core/io.h"
+#define CORE_ARRAY_IMPL
+#include "core/array.h"
+
 #define CORE_CORE_IMPL
 #endif // CORE_IMPL
 
@@ -268,22 +278,20 @@ typedef bool (*PredicateFn)(void*);
 
 #define CORE_IMPL_GUARD(SECTION) \
     defined(SECTION##_IMPL) &&   \
-    !defined(SECTION##_I) &&     \
-    !defined(CORE_NO_IMPL)        \
+    !defined(SECTION##_I)      \
 
 
-#define CORE_NO_IMPL
 #include "runtime.h"
-#undef CORE_NO_IMPL
 
 #endif // CORE_CORE_H
 
 // ===========================
 #if CORE_IMPL_GUARD(CORE_CORE)
+// #if defined(CORE_CORE_IMPL) && !defined(CORE_CORE_I)
 #define CORE_CORE_I
 
-#define CORE_RUNTIME_IMPL
-#include "runtime.h"
+// #define CORE_RUNTIME_IMPL
+// #include "runtime.h"
 
 // __attribute__ ((noreturn))
 [[noreturn]]

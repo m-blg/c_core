@@ -1,13 +1,11 @@
-#ifdef CORE_IMPL
-#define CORE_IO_IMPL
-#endif // CORE_IMPL
+// #ifdef CORE_IMPL
+// #define CORE_IO_IMPL
+// #endif // CORE_IMPL
 
 #ifndef CORE_IO_H
 #define CORE_IO_H
 
-#define CORE_NO_IMPL
 #include "core/array.h"
-#undef CORE_NO_IMPL
 
 
 enum_def(IOError, 
@@ -47,6 +45,14 @@ output_file_stream_write(OutputFileStream self[static 1], usize_t data_size, u8_
 IOError
 output_file_stream_flush(OutputFileStream self[static 1]);
 
+AllocatorError
+output_file_stream_new_in(FILE *ofile, usize_t buffer_size, Allocator alloc[static 1], OutputFileStream *out_self);
+IOError
+output_file_stream_write(OutputFileStream self[static 1], usize_t data_size, u8_t data[data_size]);
+IOError
+output_file_stream_flush(OutputFileStream self[static 1]);
+StreamWriter
+output_file_stream_stream_writer(OutputFileStream self[static 1]);
 
 #define KNRM  "\x1B[0m"
 #define KRED  "\x1B[31m"
@@ -91,8 +97,8 @@ output_file_stream_flush(OutputFileStream self[static 1]);
 #if CORE_IMPL_GUARD(CORE_IO)
 #define CORE_IO_I
 
-#define CORE_ARRAY_IMPL
-#include "core/array.h"
+// #define CORE_ARRAY_IMPL
+// #include "core/array.h"
 
 // StreamWriter
 
