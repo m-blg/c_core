@@ -1,6 +1,6 @@
-// #ifdef CORE_IMPL
-// #define CORE_IO_IMPL
-// #endif // CORE_IMPL
+#include "core/impl_guards.h"
+
+
 
 #ifndef CORE_IO_H
 #define CORE_IO_H
@@ -41,18 +41,18 @@ struct_def(OutputFileStream, {
 #define output_file_stream_rest_size(self) ((usize_t)slice_end(&(self)->buffer) - (usize_t)(self)->e_cursor)
 
 IOError
-output_file_stream_write(OutputFileStream self[static 1], usize_t data_size, u8_t data[data_size]);
+output_file_stream_write(OutputFileStream self[non_null], usize_t data_size, u8_t data[data_size]);
 IOError
-output_file_stream_flush(OutputFileStream self[static 1]);
+output_file_stream_flush(OutputFileStream self[non_null]);
 
 AllocatorError
-output_file_stream_new_in(FILE *ofile, usize_t buffer_size, Allocator alloc[static 1], OutputFileStream *out_self);
+output_file_stream_new_in(FILE *ofile, usize_t buffer_size, Allocator alloc[non_null], OutputFileStream *out_self);
 IOError
-output_file_stream_write(OutputFileStream self[static 1], usize_t data_size, u8_t data[data_size]);
+output_file_stream_write(OutputFileStream self[non_null], usize_t data_size, u8_t data[data_size]);
 IOError
-output_file_stream_flush(OutputFileStream self[static 1]);
+output_file_stream_flush(OutputFileStream self[non_null]);
 StreamWriter
-output_file_stream_stream_writer(OutputFileStream self[static 1]);
+output_file_stream_stream_writer(OutputFileStream self[non_null]);
 
 #define KNRM  "\x1B[0m"
 #define KRED  "\x1B[31m"
@@ -73,16 +73,16 @@ output_file_stream_stream_writer(OutputFileStream self[static 1]);
 // #ifdef CORE_IO_IMPL
 // // Stream Writer Trait
 // IOError
-// string_linear_buffer_write(StringLinearBuffer self[static 1], usize_t data_size, uint8_t data[data_size]) {
+// string_linear_buffer_write(StringLinearBuffer self[non_null], usize_t data_size, uint8_t data[data_size]) {
 //     return arena_allocator_alloc(&self->arena, data_size, nullptr);
 // }
 // IOError
-// string_linear_buffer_flush(StreamWriter self[static 1]) {
+// string_linear_buffer_flush(StreamWriter self[non_null]) {
 //     unimplemented();
 // }
 
 // StreamWriter
-// string_linear_buffer_stream_writer(StringLinearBuffer self[static 1]) {
+// string_linear_buffer_stream_writer(StringLinearBuffer self[non_null]) {
 //     return (StreamWriter) {
 //         ._vtable = (StreamWriter_VTable) {
 //             .write = string_linear_buffer_write,
@@ -104,19 +104,19 @@ output_file_stream_stream_writer(OutputFileStream self[static 1]);
 
 INLINE
 IOError
-stream_writer_write(StreamWriter self[static 1], usize_t data_size, uint8_t data[data_size]) {
+stream_writer_write(StreamWriter self[non_null], usize_t data_size, uint8_t data[data_size]) {
     return self->_vtable.write(self->data, data_size, data);
 }
 INLINE
 IOError
-stream_writer_flush(StreamWriter self[static 1]) {
+stream_writer_flush(StreamWriter self[non_null]) {
     return self->_vtable.flush(self->data);
 }
 
 // output_file_stream
 
 AllocatorError
-output_file_stream_new_in(FILE *ofile, usize_t buffer_size, Allocator alloc[static 1], OutputFileStream *out_self) {
+output_file_stream_new_in(FILE *ofile, usize_t buffer_size, Allocator alloc[non_null], OutputFileStream *out_self) {
     out_self->file = ofile;
     TRY(slice_new_in_T(u8_t, buffer_size, alloc, &out_self->buffer));
     out_self->b_cursor = out_self->buffer.ptr;
@@ -125,7 +125,7 @@ output_file_stream_new_in(FILE *ofile, usize_t buffer_size, Allocator alloc[stat
 }
 
 IOError
-output_file_stream_write(OutputFileStream self[static 1], usize_t data_size, u8_t data[data_size]) {
+output_file_stream_write(OutputFileStream self[non_null], usize_t data_size, u8_t data[data_size]) {
     // while (ring_buff_rest_size(&self->buffer) < data_size) {
     //     // TODO
     //     ring_buff_write_slice(data, data_size)
@@ -151,7 +151,7 @@ output_file_stream_write(OutputFileStream self[static 1], usize_t data_size, u8_
     return IO_ERROR(OK);
 }
 IOError
-output_file_stream_flush(OutputFileStream self[static 1]) {
+output_file_stream_flush(OutputFileStream self[non_null]) {
     auto len = output_file_stream_pending_len(self);
     if (len == 0) {
         return IO_ERROR(OK);
@@ -177,7 +177,7 @@ _output_file_stream_flush(void *self) {
     return output_file_stream_flush((OutputFileStream *)self);
 }
 StreamWriter
-output_file_stream_stream_writer(OutputFileStream self[static 1]) {
+output_file_stream_stream_writer(OutputFileStream self[non_null]) {
     return (StreamWriter) {
         ._vtable = (StreamWriter_VTable) {
             .write = _output_file_stream_write,

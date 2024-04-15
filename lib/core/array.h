@@ -1,3 +1,5 @@
+#include "core/impl_guards.h"
+
 #ifdef CORE_IMPL
 #undef CORE_IMPL
 
@@ -9,13 +11,25 @@
 
 #endif // CORE_IMPL
 
+#ifdef CORE_ARRAY_IMPL
+#define CORE_ARRAY_SLICE_IMPL
+#define CORE_ARRAY_DARR_IMPL
+#define CORE_ARRAY_RING_BUFF_IMPL
+#endif // CORE_ARRAY_IMPL
 
-// =======================
-#ifndef CORE_ARRAY_H
+
+#if CORE_HS_GUARD(CORE_ARRAY, SLICE)
 #define CORE_ARRAY_H
+#define CORE_ARRAY_SLICE_H
 
 #include "core/core.h"
-// #include "core/string.h"
+
+
+// "core/fmt.h"
+enum_decl(FmtError);
+struct_decl(StringFormatter);
+typedef FmtError (FmtFn)(void *, StringFormatter *);
+//
 
 struct_def(SliceVES, { 
     void *ptr;             
@@ -23,8 +37,9 @@ struct_def(SliceVES, {
     usize_t el_align;
     usize_t len;        
 
-#ifdef DBG_PRINT
-    // FmtFn *el_fmt;
+#ifdef CONTAINER_FMT
+    FmtFn *el_fmt;
+    FmtFn *el_dbg_fmt;
 #endif
 })
 
@@ -33,24 +48,24 @@ typedef SliceVES slice_t;
 
 INLINE
 usize_t
-slice_size(slice_t self[static 1]) {
+slice_size(slice_t *self) {
     return self->len * self->el_size;
 }
 INLINE
 usize_t
-slice_len(slice_t self[static 1]) {
+slice_len(slice_t *self) {
     return self->len;
 }
 
 INLINE
 void *
-slice_get_unchecked(slice_t self[static 1], usize_t index) {
+slice_get_unchecked(slice_t *self, usize_t index) {
     return (void *)((u8_t *)self->ptr + index * self->el_size);
 }
 #define slice_get_unchecked_T(T, self, index) ((T *)slice_get_unchecked(self, index))
 INLINE
 void *
-slice_get(slice_t self[static 1], usize_t index) {
+slice_get(slice_t *self, usize_t index) {
     ASSERTM(0 <= index && index < self->len, "Index out of bounds");
     return slice_get_unchecked(self, index);
 }
@@ -58,7 +73,7 @@ slice_get(slice_t self[static 1], usize_t index) {
 
 INLINE
 void *
-slice_get_i_unchecked(slice_t self[static 1], isize_t index) {
+slice_get_i_unchecked(slice_t *self, isize_t index) {
     isize_t len = (isize_t)self->len;
     index = (len + index) % len;
     return (void *)((u8_t *)self->ptr + index * self->el_size);
@@ -66,7 +81,7 @@ slice_get_i_unchecked(slice_t self[static 1], isize_t index) {
 #define slice_get_i_unchecked_T(T, self, index) ((T *)slice_get_i_unchecked(self, index))
 INLINE
 void *
-slice_get_i(slice_t self[static 1], isize_t index) {
+slice_get_i(slice_t *self, isize_t index) {
     isize_t len = (isize_t)self->len;
     ASSERTM(-len <= index && index < len, "Index out of bounds");
     return slice_get_i_unchecked(self, index);
@@ -75,27 +90,135 @@ slice_get_i(slice_t self[static 1], isize_t index) {
 
 INLINE
 void *
-slice_end(slice_t self[static 1]) {
+slice_end(slice_t *self) {
     return slice_get_unchecked(self, self->len);
 }
 
 AllocatorError
 slice_new_in(usize_t el_size, usize_t alignment, 
-             usize_t len, Allocator alloc[static 1], 
+             usize_t len, Allocator *alloc, 
              slice_t *out_self);
 #define slice_new_in_T(T, len, alloc, out_self) \
     slice_new_in(sizeof(T), alignof(T), len, alloc, out_self)
 
 void
-slice_free(slice_t self[static 1], Allocator alloc[static 1]);
+slice_free(slice_t *self, Allocator *alloc);
 /// @param out_slice should be preallocated
 void
 slice_copy_data(slice_t *self, slice_t *out_slice);
 
-// ==================================
-// ==================================
-// ==================================
 
+#ifdef DBG_PRINT
+FmtError
+slice_dbg_fmt(slice_t *self, StringFormatter *fmt);
+#endif // DBG_PRINT
+
+
+#define c_arr_lit(x, ...) (typeof(x)[]) {(x), __VA_ARGS__}
+#define c_arr_lit_len(arr) (sizeof(arr) / sizeof(typeof(0[arr])))
+
+#define slice_lit(x, ...) ((slice_t) {                                      \
+    .ptr = &c_arr_lit((x), __VA_ARGS__),                                     \
+    .el_size = sizeof(x),                                       \
+    .el_align = alignof(x),                                     \
+    .len = c_arr_lit_len(c_arr_lit((x), __VA_ARGS__)),                                        \
+})                                      \
+
+#undef CORE_ARRAY_H
+#endif // CORE_ARRAY_SLICE_H
+
+
+
+
+
+
+
+
+#if CORE_IS_GUARD(CORE_ARRAY, SLICE)
+#define CORE_ARRAY_SLICE_I
+
+AllocatorError
+slice_new_in(usize_t el_size, usize_t alignment, 
+             usize_t len, Allocator *alloc, 
+             slice_t *out_self) 
+{ 
+    void *ptr;                                                    
+    TRY(allocator_alloc(alloc, len * el_size, alignment, &ptr));           
+    *out_self = (slice_t) {                                       
+        .ptr = ptr,                                          
+        .el_size = el_size,
+        .el_align = alignment,
+        .len = len,                                          
+    };                                                         
+    return ALLOCATOR_ERROR(OK);                                           
+}
+
+void
+slice_free(slice_t *self, Allocator *alloc) {
+    allocator_free(alloc, (void**)&self->ptr);                                                               
+    NULLIFY(*self);                                                                                                 
+}
+void
+slice_clone_in(slice_t *self, Allocator *alloc, slice_t *out_slice) {
+    unimplemented(); // TODO
+}
+
+/// @param out_slice should be preallocated
+void
+slice_copy_data(slice_t *self, slice_t *out_slice) {
+    ASSERT(out_slice->len >= self->len);
+    memcpy(out_slice->ptr, self->ptr, slice_size(self));
+}
+
+// void
+// slice_i32_dbg_print(slice_t *self) {
+//     void *ptr;             
+//     usize_t el_size;
+//     usize_t el_align;
+//     usize_t len;        
+//     #define PAD "    "
+//     printf("slice {" "\n");
+//         printf(PAD "len: %ld" "\n", self->len);
+//         printf(PAD "data: [", self->len);
+//         for_in_range(i, 0, darr_len(self), {
+//             printf("%d", *darr_get_T(i32_t, self, i));
+//         })
+//         printf("]" "\n");
+//     printf("}" "\n");
+//     #undef PAD
+// }
+
+#ifdef DBG_PRINT
+
+
+FmtError
+slice_dbg_fmt(slice_t *self, StringFormatter *fmt) {
+    auto fo = (Formattable) {
+        ._vtable = (Formattable_VTable) {
+            .fmt = self->el_dbg_fmt,
+        },
+    };
+    TRY(string_formatter_write(fmt, S("[")));
+    for_in_range(i, 0, self->len-1, {
+        // TODO figure out a way to dispatch on type here (static or dynamic)
+        fo.data = slice_get(self, i);
+        TRY(formattable_fmt(&fo, fmt));
+        TRY(string_formatter_write(fmt, S(", ")));
+    })
+    fo.data = slice_get_i(self, -1);
+    TRY(formattable_fmt(&fo, fmt));
+    TRY(string_formatter_write(fmt, S("]")));
+
+    return FMT_ERROR(OK);
+}
+
+#endif
+
+#endif // CORE_ARRAY_SLICE_I
+
+#if CORE_HS_GUARD(CORE_ARRAY, DARR)
+#define CORE_ARRAY_H
+#define CORE_ARRAY_DARR_H
 
 /// @brief dynamic array with variable element size
 /// @param el_size should be equal to sizeof(T), such that
@@ -112,7 +235,7 @@ struct_def(DArrVES, {
 
 // INLINE
 // void
-// darr_ves_init(DArrVES self[static 1], usize_t el_size, Allocator allocator) {
+// darr_ves_init(DArrVES *self, usize_t el_size, Allocator allocator) {
 //     *self = (DArrVES) {
 //         .ptr = nullptr,
 //         .el_size = el_size,
@@ -169,120 +292,15 @@ darr_get_i(darr_t self, isize_t index) {
 #define darr_new_cap_in_T(T, cap, allocator, out_self)\
     darr_new_cap_in(sizeof(T), alignof(T), cap, allocator, out_self)
 
-// ==================================
-// ==================================
-// ==================================
 
-struct_def(RingBuffVES, {                                                                                                    
-    slice_t data;                                                                                                  
-    void *b_cursor;                                                                                                    
-    void *e_cursor;                                                                                                    
-    usize_t len;
-    Allocator allocator;                                                                                           
-})
+#undef CORE_ARRAY_H
+#endif // CORE_ARRAY_DARR_H
 
-typedef RingBuffVES *ring_buff_t;
-#define RingBuffVES_T(T) RingBuffVES
-#define ring_buff_T(T) ring_buff_t
-
-/// @param[in] self: CircularBuffer(T) *                                         
-#define ring_buff_end(self) slice_end(&self->data)
-#define ring_buff_cap(self) (self->data.len)
-#define ring_buff_len(self) (self->len)
-
-INLINE
-void *                                                                                                                 
-ring_buff_last(ring_buff_t self) {                                                              
-    return self->e_cursor;                                                                                         
-}                                                                                                                   
-
-#endif // CORE_ARRAY_H
-
-
-
-// =======================
-#if CORE_IMPL_GUARD(CORE_ARRAY)
-#define CORE_ARRAY_I
-
-// #define CORE_CORE_IMPL
-// #include "core/core.h"
-
-AllocatorError
-slice_new_in(usize_t el_size, usize_t alignment, 
-             usize_t len, Allocator alloc[static 1], 
-             slice_t *out_self) 
-{ 
-    void *ptr;                                                    
-    TRY(allocator_alloc(alloc, len * el_size, alignment, &ptr));           
-    *out_self = (slice_t) {                                       
-        .ptr = ptr,                                          
-        .el_size = el_size,
-        .el_align = alignment,
-        .len = len,                                          
-    };                                                         
-    return ALLOCATOR_ERROR(OK);                                           
-}
-
-void
-slice_free(slice_t self[static 1], Allocator alloc[static 1]) {
-    allocator_free(alloc, (void**)&self->ptr);                                                               
-    NULLIFY(*self);                                                                                                 
-}
-void
-slice_clone_in(slice_t self[static 1], Allocator alloc[static 1], slice_t out_slice[static 1]) {
-    unimplemented(); // TODO
-}
-
-/// @param out_slice should be preallocated
-void
-slice_copy_data(slice_t *self, slice_t *out_slice) {
-    ASSERT(out_slice->len >= self->len);
-    memcpy(out_slice->ptr, self->ptr, slice_size(self));
-}
-
-// void
-// slice_i32_dbg_print(slice_t self[static 1]) {
-//     void *ptr;             
-//     usize_t el_size;
-//     usize_t el_align;
-//     usize_t len;        
-//     #define PAD "    "
-//     printf("slice {" "\n");
-//         printf(PAD "len: %ld" "\n", self->len);
-//         printf(PAD "data: [", self->len);
-//         for_in_range(i, 0, darr_len(self), {
-//             printf("%d", *darr_get_T(i32_t, self, i));
-//         })
-//         printf("]" "\n");
-//     printf("}" "\n");
-//     #undef PAD
-// }
-
-// #ifdef DBG_PRINT
-
-// // FmtError
-// // slice_dbg_fmt(self, fmt) {
-// //     auto fo = (Formattable) {
-// //         ._vtable = (Formattable_VTable) {
-// //             .fmt = self->el_fmt,
-// //         },
-// //     };
-// //     string_formatter_write(S("["));
-// //     for_in_range(i, 0, self->len, {
-// //         // TODO figure out a way to dispatch on type here (static or dynamic)
-// //         fo.data = slice_get(self, i);
-// //         formattable_fmt(&fo, fmt);
-// //         string_formatter_write(S(", "));
-// //     })
-// //     string_formatter_write(S("["));
-// // }
-
-// #endif
-
-// =======================
+#if CORE_IS_GUARD(CORE_ARRAY, DARR)
+#define CORE_ARRAY_DARR_I
 
 AllocatorError 
-darr_new_cap_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator allocator[static 1], darr_t out_self[static 1]) {
+darr_new_cap_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator *allocator, darr_t *out_self) {
     // TODO: test that alignment trick works (probably redo)
     
     // // DArrVes
@@ -314,7 +332,7 @@ darr_new_cap_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator alloc
 }
 
 void 
-darr_free(darr_t self[static 1]) {
+darr_free(darr_t *self) {
     auto alloc = (*self)->allocator; // move out allocator
     allocator_free(&alloc, (void **)self);
 }
@@ -327,7 +345,7 @@ darr_free(darr_t self[static 1]) {
 
 // self->cap can overflow
 AllocatorError
-darr_push(darr_t self[static 1], void *item) {
+darr_push(darr_t *self, void *item) {
     // arrow op double deref used (Not working btw)
     auto _self = *self;
     if (darr_rest(_self) == 0) {
@@ -355,6 +373,22 @@ darr_push(darr_t self[static 1], void *item) {
     return ALLOCATOR_ERROR(OK);
 }
 
+AllocatorError
+darr_from_slice_in(slice_t *slice, Allocator *alloc, darr_t *self) {
+    TRY(darr_new_cap_in(slice->el_size, slice->el_align, slice_len(slice), alloc, self));
+
+    memcpy((*self)->data.ptr, slice->ptr, slice->len * slice->el_size);
+    (*self)->len = slice_len(slice);
+    
+    return ALLOCATOR_ERROR(OK);
+}
+
+#define darr_lit(self, ...) {\
+    auto sl = slice_lit(__VA_ARGS__);\
+    TRY(darr_from_slice_in(&sl, &g_ctx.global_alloc, self));\
+}\
+
+#ifdef DBG_PRINT
 void
 darr_i32_dbg_print(darr_t self) {
     #define PAD "    "
@@ -370,14 +404,46 @@ darr_i32_dbg_print(darr_t self) {
     printf("}" "\n");
     #undef PAD
 }
+#endif // DBG_PRINT
+
+#endif // CORE_ARRAY_DARR
+
+#if CORE_HS_GUARD(CORE_ARRAY, RING_BUFF)
+#define CORE_ARRAY_H
+#define CORE_ARRAY_RING_BUFF_H
+
+struct_def(RingBuffVES, {                                                                                                    
+    slice_t data;                                                                                                  
+    void *b_cursor;                                                                                                    
+    void *e_cursor;                                                                                                    
+    usize_t len;
+    Allocator allocator;                                                                                           
+})
+
+typedef RingBuffVES *ring_buff_t;
+#define RingBuffVES_T(T) RingBuffVES
+#define ring_buff_T(T) ring_buff_t
+
+/// @param[in] self: CircularBuffer(T) *                                         
+#define ring_buff_end(self) slice_end(&self->data)
+#define ring_buff_cap(self) (self->data.len)
+#define ring_buff_len(self) (self->len)
+
+INLINE
+void *                                                                                                                 
+ring_buff_last(ring_buff_t self) {                                                              
+    return self->e_cursor;                                                                                         
+}                                                                                                                   
+
+#undef CORE_ARRAY_H
+#endif // CORE_ARRAY_RING_BUFF_H
 
 
-// ===================================
-// ===================================
-// ===================================
+#if CORE_IS_GUARD(CORE_ARRAY, RING_BUFF)
+#define CORE_ARRAY_RING_BUFF_I
 
 AllocatorError                                                                                                               
-ring_buff_new_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator alloc[static 1], ring_buff_t *out_self) {                             
+ring_buff_new_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator *alloc, ring_buff_t *out_self) {                             
     void *data;
     TRY(alloc_two(sizeof(RingBuffVES), alignof(RingBuffVES), 
                   cap * el_size, alignment,
@@ -399,7 +465,7 @@ ring_buff_new_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator allo
     return ALLOCATOR_ERROR(OK);
 }
 void 
-ring_buffer_free(ring_buff_t self[static 1]) {
+ring_buffer_free(ring_buff_t *self) {
     auto alloc = (*self)->allocator; // move out allocator
     allocator_free(&alloc, (void **)self);
 }
@@ -420,6 +486,4 @@ ring_buff_push(ring_buff_t self, void *value) {
     self->len += 1;
 }                                                                                                                   
 
-#endif // CORE_ARRAY_IMPL
-
-                                                                                 
+#endif // CORE_ARRAY_RING_BUFF_I

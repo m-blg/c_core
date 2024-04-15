@@ -1,3 +1,5 @@
+#include "core/impl_guards.h"
+
 #ifdef CORE_IMPL
 #undef CORE_IMPL
 
@@ -6,8 +8,13 @@
 #include "core/runtime.h"
 #define CORE_IO_IMPL
 #include "core/io.h"
+#include "core/fmt/fmt.h"
+#define CORE_FMT_IMPL
+#include "core/fmt/fmt.h"
 #define CORE_ARRAY_IMPL
 #include "core/array.h"
+#define CORE_STRING_IMPL
+#include "core/string.h"
 
 #define CORE_CORE_IMPL
 #endif // CORE_IMPL
@@ -23,7 +30,8 @@
 #include <assert.h>
 
 #ifndef DBG_PRINT
-#define DBG_PRINT 1
+#define DBG_PRINT
+#define CONTAINER_FMT
 #endif
 
 typedef uint64_t usize_t;
@@ -46,6 +54,14 @@ typedef int8_t  i8_t;
 #endif
 
 
+#define struct_decl(name) \
+typedef struct name name;  \
+struct name;                \
+
+#define enum_decl(name) \
+typedef enum name name;  \
+enum name;                \
+
 #define struct_def(name, fields) \
 typedef struct name name;         \
 struct name fields;               \
@@ -54,6 +70,7 @@ struct name fields;               \
 typedef enum name name;         \
 enum name {__VA_ARGS__};               \
 
+#define non_null static 1
 
 enum_def(AllocatorError,
     ALLOCATOR_ERROR_OK,
@@ -115,38 +132,44 @@ panic();
         return e;           \
     }                       \
 
+#define IS_OK(e) (*(int *)&(e) == 0)
+#define IS_ERR(e) (*(int *)&(e) != 0)
 
 #define TRY(expr) {                         \
-    auto e = (expr);                        \
-    if (*(int *)&e != 0) {              \
-        return e;                           \
+    auto _e_ = (expr);                        \
+    if (IS_ERR(_e_)) {              \
+        return _e_;                           \
     }                                       \
   }                                         \
 
 #define OR_RAISE(expr) {                         \
-    auto e = (expr);                        \
-    if (*(int *)&e != 0) {              \
-        return g_ctx.raise(error_cast(e));  \
+    auto _e_ = (expr);                        \
+    if (IS_ERR(_e_)) {              \
+        return g_ctx.raise(error_cast(_e_));  \
     }                                       \
   }                                         \
 
 
-#define ASSERT(expr)                         \
+#define ASSERT(expr)                        \
     if (!(expr)) {                           \
-        panic();                             \
-    }
-
-#define ASSERTM(expr, msg)                   \
-    if (!(expr)) {                           \
-        fprintf(stderr, "%*s", (int)(sizeof(msg)-1), msg);\
-        panic();                             \
-    }
-
-#define ASSERT_OK(expr)                      \
-    auto e = (expr);                         \
-    if (*(isize_t *)&e != 0) {               \
+        fprintf(stderr, "ASSERT at %s:%d:\n", __FILE__, __LINE__);  \
         panic();                             \
     }                                        \
+
+#define ASSERTM(expr, msg) {                                \
+    if (!(expr)) {                                          \
+        fprintf(stderr, "ASSERTM: %*s\nat %s:%d:\n", (int)(sizeof(msg)-1), msg, __FILE__, __LINE__);  \
+        panic();                                            \
+    }                                                       \
+}
+
+#define ASSERT_OK(expr) {                     \
+    auto _e_ = (expr);                         \
+    if (IS_ERR(_e_)) {               \
+        fprintf(stderr, "ASSERT_OK at %s:%d:\n", __FILE__, __LINE__);  \
+        panic();                             \
+    }                                        \
+}
 
 /// @param x: Sized
 #define NULLIFY(x) memset(&(x), 0, sizeof(x))
@@ -203,7 +226,7 @@ allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_p
 AllocatorError 
 alloc_two(usize_t size1, usize_t align1, 
           usize_t size2, usize_t align2,
-          Allocator allocator[static 1], 
+          Allocator allocator[non_null], 
           void **out1, void **out2);
 
 /// @brief V
@@ -276,12 +299,9 @@ typedef bool (*PredicateFn)(void*);
 
 #define printlnf(fmt, ...) printf(fmt"\n", __VA_ARGS__)
 
-#define CORE_IMPL_GUARD(SECTION) \
-    defined(SECTION##_IMPL) &&   \
-    !defined(SECTION##_I)      \
+#define STRINGIFY(x) #x
 
-
-#include "runtime.h"
+// #include "runtime.h"
 
 #endif // CORE_CORE_H
 
@@ -314,6 +334,7 @@ print_stack_trace() {} // TODO(mbgl)
 [[noreturn]]
 void 
 panic() { 
+    __asm__ volatile ("int $3");
     print_stack_trace(); 
     exit(1); 
 }
@@ -350,7 +371,7 @@ allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_p
 AllocatorError 
 alloc_two(usize_t size1, usize_t align1, 
           usize_t size2, usize_t align2,
-          Allocator allocator[static 1], 
+          Allocator allocator[non_null], 
           void **out1, void **out2) 
 {
     void *p = nullptr;

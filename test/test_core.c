@@ -1,6 +1,7 @@
 #include <criterion/criterion.h>
 
-#include "core/core.c"
+#define CORE_IMPL
+#include "core/core.h"
 
 #define KNRM  "\x1B[0m"
 #define KRED  "\x1B[31m"
@@ -22,7 +23,7 @@ foo(int32_t x) {
 struct Struct { int i; };
 typedef struct Struct Struct;
 typedef int I; // just a type allias, int == I
-// typedef int NonNullInt[static 1]; not allowed
+// typedef int NonNullInt[non_null]; not allowed
 // #define NonNull(T) 
 
 void
@@ -181,3 +182,20 @@ enum_def(En,
     EN_A,
     EN_B,
 )
+
+
+
+// Test(core, fn) {
+int main() {
+    TEST_PRINT(core, fn);
+    F = test_fn;
+    int x = 5;
+    for_in_range(i, 0, x-i, {
+        printf("%d %d\n", i, x-i);
+    })
+}
+
+
+
+
+

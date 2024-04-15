@@ -1,14 +1,17 @@
 
 #include <criterion/criterion.h>
-#include "core/array.c"
+// #define CORE_CORE_IMPL
+// #include "core/core.h"
+#define CORE_IMPL
+#include "core/array.h"
 
 Test(slice, basic) {
 // int main() {
     ctx_init_default();
     slice_T(int) sl;
     slice_T(int) sl2;
-    slice_new_in_T(int, 3, g_ctx.global_alloc, &sl);
-    slice_new_in_T(int, 3, g_ctx.global_alloc, &sl2);
+    slice_new_in_T(int, 3, &g_ctx.global_alloc, &sl);
+    slice_new_in_T(int, 3, &g_ctx.global_alloc, &sl2);
     *slice_get_T(int, &sl, 0) = 5;
     *slice_get_T(int, &sl, 1) = 7;
     *slice_get_T(int, &sl, 2) = 9;
@@ -16,8 +19,8 @@ Test(slice, basic) {
     for_in_range(i, 0, slice_len(&sl), {
         printf("%d %d\n", *slice_get_T(int, &sl, i), *slice_get_iT(int, &sl2, -i - 1));
     })
-    slice_free(&sl, g_ctx.global_alloc);
-    slice_free(&sl2, g_ctx.global_alloc);
+    slice_free(&sl, &g_ctx.global_alloc);
+    slice_free(&sl2, &g_ctx.global_alloc);
 }
 
 // Test(darr, basic)
@@ -29,7 +32,7 @@ int main()
 
     i32_t x = 3;
     darr_t arr; 
-    darr_new_cap_in_T(i32_t, 3, g_ctx.global_alloc, &arr);
+    darr_new_cap_in_T(i32_t, 3, &g_ctx.global_alloc, &arr);
     darr_push(&arr, &x);
     darr_push(&arr, &(i32_t){5});
     darr_push(&arr, &(i32_t){7});

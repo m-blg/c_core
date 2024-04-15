@@ -133,8 +133,8 @@ __prefix##_init(Self *self, Allocator *allocator) {                        \
 }                                                                               \
                                                                                 \
 Error                                                                           \
-__prefix##_new_in(Allocator allocator[static 1],                                          \
-                  Allocator self_allocator[static 1],                           \
+__prefix##_new_in(Allocator allocator[non_null],                                          \
+                  Allocator self_allocator[non_null],                           \
                   Self **out_self)                                              \
 {                                                                               \
     TRY(allocator_alloc(allocator, sizeof(Self), (void**)out_self));                   \

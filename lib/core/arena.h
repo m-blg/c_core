@@ -44,11 +44,11 @@ struct ArenaAllocator_dyn {
 }
 
 AllocatorError                        
-arena_allocator_alloc(Arena[static 1], usize_t, usize_t, void **);
+arena_allocator_alloc(Arena[non_null], usize_t, usize_t, void **);
 AllocatorError
-arena_allocator_resize(Arena[static 1], usize_t, usize_t, void **);
+arena_allocator_resize(Arena[non_null], usize_t, usize_t, void **);
 void
-arena_allocator_free(Arena[static 1], void **);
+arena_allocator_free(Arena[non_null], void **);
 
 #define ARENA_DEFAULT_CHUNK_SIZE 1024
 
@@ -97,7 +97,7 @@ arena_init(
 }
 
 void
-arena_reset(Arena self[static 1]) {
+arena_reset(Arena self[non_null]) {
     // ArenaChunk *_node_;
     FOR_IN_LIST(self->head, {
         arena_chunk_reset(_node_);
@@ -105,7 +105,7 @@ arena_reset(Arena self[static 1]) {
 }
 
 void
-arena_free(Arena self[static 1]) {
+arena_free(Arena self[non_null]) {
     for (auto node = self->head; node != nullptr; ) {
         auto next = node->next;
         allocator_free(self->allocator, (void**)&node);
@@ -114,15 +114,15 @@ arena_free(Arena self[static 1]) {
 }
 
 // AllocatorError                        
-// _arena_allocator_alloc(Arena[static 1], usize_t , void **);
+// _arena_allocator_alloc(Arena[non_null], usize_t , void **);
 // AllocatorError
-// _arena_allocator_resize(Arena[static 1] , void **, usize_t );
+// _arena_allocator_resize(Arena[non_null] , void **, usize_t );
 // void
-// _arena_allocator_free(Arena[static 1], void **);
+// _arena_allocator_free(Arena[non_null], void **);
 
 INLINE
 Allocator
-arena_allocator(Arena self[static 1]) {
+arena_allocator(Arena self[non_null]) {
     AllocatorError                        
     _arena_allocator_alloc(void *self, usize_t data_size, uint8_t *out_ptr[data_size]) {
         return arena_allocator_alloc((Arena *)self, data_size, out_ptr);
@@ -141,7 +141,7 @@ arena_allocator(Arena self[static 1]) {
 
 
 AllocatorError                        
-arena_allocator_alloc(Arena self[static 1], usize_t data_size, uint8_t *out_ptr[data_size]) 
+arena_allocator_alloc(Arena self[non_null], usize_t data_size, uint8_t *out_ptr[data_size]) 
 {
     // Arena *_self = (Arena*)self;
     // ArenaChunk *chunk = list_find_arena_chunk(_self->head, &chunk, ___arena_allocator_alloc_pred);
@@ -162,7 +162,7 @@ arena_allocator_alloc(Arena self[static 1], usize_t data_size, uint8_t *out_ptr[
     return ERROR_OK;
 }
 AllocatorError
-arena_allocator_resize(Arena self[static 1], void **in_out_ptr, usize_t data_size) {
+arena_allocator_resize(Arena self[non_null], void **in_out_ptr, usize_t data_size) {
     // Arena *_self = (Arena*)self;
 
     ArenaChunk *chunk;
@@ -179,7 +179,7 @@ arena_allocator_resize(Arena self[static 1], void **in_out_ptr, usize_t data_siz
 
 /// doesn't deallocate memory
 void
-arena_allocator_free(Arena self[static 1], void **in_out_ptr) {
+arena_allocator_free(Arena self[non_null], void **in_out_ptr) {
     *in_out_ptr = nullptr;
 }
 

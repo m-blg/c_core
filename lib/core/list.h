@@ -47,8 +47,8 @@ list_init(Self *self, Allocator *allocator) {
     self->_allocator_ = allocator;
 }
 Error
-list_new_in(Allocator allocator[static 1],
-                  Allocator self_allocator[static 1],
+list_new_in(Allocator allocator[non_null],
+                  Allocator self_allocator[non_null],
                   Self **out_self)
 {
     TRY(allocator_alloc(allocator, sizeof(Self), (void**)out_self));
@@ -86,12 +86,12 @@ list_push_node(Self *self, Node *node) {
 // #define LIST_VNS_NODE_DBG_FMT_PROCS(T)
 
 // void
-// PAR_NS(list_ves_node, T, dbg_fmt)(ListVES_Node self[static 1], StringFormatter fmt[static 1]);
+// PAR_NS(list_ves_node, T, dbg_fmt)(ListVES_Node self[non_null], StringFormatter fmt[non_null]);
 // void
-// PAR_NS(list_ves, T, dbg_fmt)(ListVES self[static 1], StringFormatter fmt[static 1]);
+// PAR_NS(list_ves, T, dbg_fmt)(ListVES self[non_null], StringFormatter fmt[non_null]);
 // #ifdef CORE_LIST_IMPL
 // void
-// PAR_NS(list_ves_node, T, dbg_fmt)(ListVES_Node self[static 1], StringFormatter fmt[static 1]) {
+// PAR_NS(list_ves_node, T, dbg_fmt)(ListVES_Node self[non_null], StringFormatter fmt[non_null]) {
 //     usize_t_dbg_fmt((usize_t)&self->next, fmt);
 //     usize_t_dbg_fmt((usize_t)&self->prev, fmt);
 //     string_formatter_writeln(fmt, S("data[]:"));
@@ -99,7 +99,7 @@ list_push_node(Self *self, Node *node) {
 // }
 
 // void
-// PAR_NS(list_ves, T, dbg_fmt)(ListVES self[static 1], StringFormatter fmt[static 1]) {
+// PAR_NS(list_ves, T, dbg_fmt)(ListVES self[non_null], StringFormatter fmt[non_null]) {
 //     string_formatter_writeln(fmt, S("ListVNS {"));
 //     string_formatter_pad_push(fmt);
 //         list_ves_node_dbg_fmt(&self->head, fmt);

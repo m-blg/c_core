@@ -24,7 +24,7 @@ __thread struct {
 void
 ctx_init_default();
 void
-io_init(Allocator alloc[static 1]);
+io_init(Allocator alloc[non_null]);
 
 #endif // CORE_RUNTIME_H
 
@@ -92,7 +92,7 @@ c_allocator() {
 }
 
 void
-io_init(Allocator alloc[static 1]) {
+io_init(Allocator alloc[non_null]) {
     output_file_stream_new_in(
         stdout, 
         STDOUT_STREAM_DEFAULT_BUFFER_SIZE, 
@@ -106,6 +106,7 @@ ctx_init_default() {
     g_ctx.global_alloc = g_c_allocator;
     g_ctx.raise = default_raise;
 
+    io_init(&g_ctx.global_alloc);
     g_ctx.stdout_sw = output_file_stream_stream_writer(&g_stdout_ofs);
 }
 #endif // CORE_RUNTIME_IMPL

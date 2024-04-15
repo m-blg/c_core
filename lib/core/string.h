@@ -1,4 +1,10 @@
 #ifdef CORE_IMPL
+#undef CORE_IMPL
+
+#include "core/core.h"
+#define CORE_IMPL
+#include "core/core.h"
+
 #define CORE_STRING_IMPL
 #endif // CORE_IMPL
 
@@ -6,13 +12,19 @@
 #define CORE_STRING_H
 
 #include "core/core.h"
-#include "core/iter.h"
+// #include "core/iter.h"
 
 
-// #define NULL (void *)0
+enum_def(UTF8_Error,
+    UTF8_ERROR_OK,
+    UTF8_ERROR_EMPTY_STRING,
+    UTF8_ERROR_INCOMPLETE_RUNE,
+    UTF8_ERROR_INVALID_RUNE,
+)
+#define UTF8_ERROR(ERR) ((UTF8_Error)UTF8_ERROR_##ERR)
+
 
 typedef const char* cstr_t; 
-
 
 typedef struct {
     union {
@@ -32,6 +44,7 @@ typedef struct {
     };
 } CharUTF8;
 
+
 typedef uint32_t rune_t;
 
 IteratorError 
@@ -40,63 +53,226 @@ rune_t
 utf8_decode(const CharUTF8 *ptr);
 
 /// Assumed to own memory
-typedef struct {
-    CharUTF8 *ptr;
+struct_def(String, {
+    uchar_t *ptr;
     usize_t byte_cap;
     usize_t byte_len; // in bytes
     // usize_t rune_len; considered unneeded 
     Allocator *allocator;
-} String;
+})
 
 /// Assumed to not own memory
-typedef struct {
-    CharUTF8 *ptr;
+struct_def(str_t, {
+    uchar_t *ptr;
     usize_t byte_len; // in bytes
     // usize_t rune_len;
-} str_t;
+})
+
+#define str_len(self) ((self).byte_len)
+#define str_from_ptr_len(_ptr, _len) ((str_t) {.ptr = (uchar_t *)(_ptr), .byte_len = (_len)})
+
+#define string_to_str(self) ((str_t) {.ptr = (self)->ptr, .byte_len = (self)->byte_len })
+
+#define S(c_str) (str_t) { .ptr  = (uchar_t *)(c_str), .byte_len = sizeof(c_str)-1 }
+
+#define len(x)                  \
+    _Generic( (x),              \
+        str_t: ((x).byte_len)   \
+    )                           \
+
+
+AllocatorError 
+string_init(String *self, usize_t byte_cap, Allocator *allocator);
+
+AllocatorError
+string_new_cap_in(usize_t byte_cap, Allocator *a, String *out_self);
+
+UTF8_Error
+str_next_rune(str_t self, rune_t *out_rune, str_t *out_self);
+
+/// @brief return the length of the string in runes
+/// @note linear complexity
+/// @param self 
+/// @return number of runes in the string
+UTF8_Error
+str_rune_len(str_t self, usize_t *out_len);
+
+#ifdef DBG_PRINT
+
+// "core/fmt.h"
+struct_decl(StringFormatter)
+enum_decl(FmtError)
+//
+
+FmtError
+str_dbg_fmt(const str_t *self, StringFormatter *fmt);
+
+#endif // DBG_PRINT
+
+FmtError
+str_fmt(const str_t *self, StringFormatter *fmt);
 
 #endif // CORE_STRING_H 
+
+
+
+
+
+
 
 #if defined(CORE_STRING_IMPL) && !defined(CORE_STRING_I)
 #define CORE_STRING_I
 
-IteratorError 
-get_next_rune(const CharUTF8 *ptr, const CharUTF8 **out_ptr) {
-    if (ptr->ascii == '\0')
-        return ITERATOR_ERROR(STOP_ITERATOR);
-    if (ptr->ascii < 0x80u) {
-        *out_ptr = ptr + 1;
-        return ITERATOR_ERROR(OK);
-    } else if (ptr->ascii < 0xe0u) {
-        *out_ptr = ptr + 2;
-        return ITERATOR_ERROR(OK);
-    } else if (ptr->ascii < 0xf0u) {
-        *out_ptr = ptr + 3;
-        return ITERATOR_ERROR(OK);
-    } else if (ptr->ascii < 0xf8u) {
-        *out_ptr = ptr + 4;
-        return ITERATOR_ERROR(OK);
+UTF8_Error
+str_rune_len(str_t self, usize_t *out_len) {
+    register usize_t len = 0; 
+    rune_t r;
+    UTF8_Error e;
+    while (true) {
+        e = str_next_rune(self, &r, &self);
+        if (e != UTF8_ERROR(OK)) {
+            if (e == UTF8_ERROR(EMPTY_STRING)) {
+                *out_len = len;
+                return UTF8_ERROR(OK);
+            }
+            return e;
+        }
+        len += 1;
     }
+
     unreacheble();
 }
 
-rune_t
-utf8_decode(const CharUTF8 *ptr) 
-{
-    if (ptr->r1.c1 < 0x80u) {
-        return ptr->r1.c1;
-    } else if (ptr->r2.c1 < 0xe0u) {
-        return ((ptr->r2.c1 & 0x1f) << 6) | (ptr->r2.c2 & 0x3f);
-    } else if (ptr->r3.c1 < 0xf0u) {
-        return ((ptr->r3.c1 & 0x0f) << 12) | ((ptr->r3.c2 & 0x3f) << 6) | (ptr->r3.c3 & 0x3f);
-    } else if (ptr->r4.c1 < 0xf8u) {
-        return ((ptr->r4.c1 & 0x07) << 18) | ((ptr->r4.c2 & 0x3f) << 12) | ((ptr->r4.c3 & 0x3f) << 6) | (ptr->r4.c4 & 0x3f);
+UTF8_Error
+str_next_rune(str_t self, rune_t *out_rune, str_t *out_self) {
+    if (str_len(self) < 1) {
+        return UTF8_ERROR(EMPTY_STRING);
     }
-    unreacheble();
+
+    auto ptr = (CharUTF8 *)self.ptr;
+    // Decode
+    u8_t d = 0;
+    if (ptr->r1.c1 < 0x80u) {
+        d = 1;
+        *out_rune = ptr->r1.c1;
+    } else if (ptr->r2.c1 < 0xe0u) {
+        d = 2;
+        if (str_len(self) < d) {
+            return UTF8_ERROR(INCOMPLETE_RUNE);
+        }
+        *out_rune = ((ptr->r2.c1 & 0x1f) << 6) | (ptr->r2.c2 & 0x3f);
+    } else if (ptr->r3.c1 < 0xf0u) {
+        d = 3;
+        if (str_len(self) < d) {
+            return UTF8_ERROR(INCOMPLETE_RUNE);
+        }
+        *out_rune = ((ptr->r3.c1 & 0x0f) << 12) | ((ptr->r3.c2 & 0x3f) << 6) | (ptr->r3.c3 & 0x3f);
+    } else if (ptr->r4.c1 < 0xf8u) {
+        d = 4;
+        if (str_len(self) < d) {
+            return UTF8_ERROR(INCOMPLETE_RUNE);
+        }
+        *out_rune = ((ptr->r4.c1 & 0x07) << 18) | ((ptr->r4.c2 & 0x3f) << 12) | ((ptr->r4.c3 & 0x3f) << 6) | (ptr->r4.c4 & 0x3f);
+    } else {
+        return UTF8_ERROR(INVALID_RUNE);
+    }
+
+    *out_self = str_from_ptr_len(self.ptr + d, str_len(self) - d);
+    return UTF8_ERROR(OK);
 }
+
+AllocatorError
+runes_to_string(slice_T(rune_t) runes[non_null], String *out_string) {
+    String s;
+    TRY(string_new_cap_in(sizeof(CharUTF8) * slice_len(runes), &g_ctx.global_alloc, &s));
+    for_in_range(i, 0, slice_len(runes), {
+        // string_push();
+    })
+
+    return ALLOCATOR_ERROR(OK);
+}
+
+INLINE
+uchar_t *
+str_get_byte(str_t self, usize_t index) {
+    return self.ptr + index;
+}
+
+INLINE
+isize_t
+wrap_index(isize_t index, usize_t len) {
+    return (len + index) % len;
+} 
+
+str_t
+str_byte_slice(str_t self, usize_t li, usize_t hi) {
+    ASSERT(0 <= li && li <= hi && hi <= str_len(self));
+    return (str_t) {
+        .ptr = self.ptr + li,
+        .byte_len = hi - li,
+    };
+}
+
+bool
+str_eq(str_t str1, str_t str2) {
+    if (str_len(str1) != str_len(str2)) {
+        return false;
+    }
+
+    for_in_range(i, 0, str_len(str1), {
+        if (*str_get_byte(str1, i) != *str_get_byte(str2, i)) {
+            return false;
+        }
+    })
+
+    return true;
+}
+
+// TODO: test it
+bool
+str_is_prefix(str_t prefix, str_t str) {
+    if (str_len(prefix) > str_len(str)) {
+        return false;
+    }
+    return str_eq(prefix, str_byte_slice(str, 0, str_len(prefix)));
+}
+
+// IteratorError 
+// get_next_rune(const char *ptr, const CharUTF8 **out_ptr) {
+//     if (ptr->ascii == '\0')
+//         return ITERATOR_ERROR(STOP_ITERATOR);
+//     if (ptr->ascii < 0x80u) {
+//         *out_ptr = ptr + 1;
+//         return ITERATOR_ERROR(OK);
+//     } else if (ptr->ascii < 0xe0u) {
+//         *out_ptr = ptr + 2;
+//         return ITERATOR_ERROR(OK);
+//     } else if (ptr->ascii < 0xf0u) {
+//         *out_ptr = ptr + 3;
+//         return ITERATOR_ERROR(OK);
+//     } else if (ptr->ascii < 0xf8u) {
+//         *out_ptr = ptr + 4;
+//         return ITERATOR_ERROR(OK);
+//     }
+//     unreacheble();
+// }
+
+// rune_t
+// utf8_decode(const CharUTF8 *ptr) 
+// {
+//     if (ptr->r1.c1 < 0x80u) {
+//         return ptr->r1.c1;
+//     } else if (ptr->r2.c1 < 0xe0u) {
+//         return ((ptr->r2.c1 & 0x1f) << 6) | (ptr->r2.c2 & 0x3f);
+//     } else if (ptr->r3.c1 < 0xf0u) {
+//         return ((ptr->r3.c1 & 0x0f) << 12) | ((ptr->r3.c2 & 0x3f) << 6) | (ptr->r3.c3 & 0x3f);
+//     } else if (ptr->r4.c1 < 0xf8u) {
+//         return ((ptr->r4.c1 & 0x07) << 18) | ((ptr->r4.c2 & 0x3f) << 12) | ((ptr->r4.c3 & 0x3f) << 6) | (ptr->r4.c4 & 0x3f);
+//     }
+//     unreacheble();
+// }
 
 // #define STRING_FREE(ptr)
-
 
 // #define BUFF_T(T)      
 // typedef struct {       
@@ -132,41 +308,34 @@ string_init(String *self, usize_t byte_cap, Allocator *allocator) {
     return ALLOCATOR_ERROR(OK);
 }
 
-void string_free(String *self) {
+void 
+string_free(String self[non_null]) {
     ASSERT(self && self->ptr);
 
     allocator_free(self->allocator, (void**)&self->ptr);
     memset(self, 0, sizeof(*self));
 }
 
-str_t 
-str_from_c_str(const char *c_str) {
-    const CharUTF8 *c = (CharUTF8*)c_str;
-    const CharUTF8 *next = NULL;
-    usize_t rune_len = 0;
-    usize_t byte_len = 0;
+// str_t 
+// str_from_c_str(const char *c_str) {
+//     const CharUTF8 *c = (CharUTF8*)c_str;
+//     const CharUTF8 *next = NULL;
+//     usize_t rune_len = 0;
+//     usize_t byte_len = 0;
 
-    while (get_next_rune(c, &next) != ITERATOR_ERROR(STOP_ITERATOR)) {
-        rune_len += 1;
-        byte_len += (usize_t)(next - c);
-        c = next;
-    }
+//     while (get_next_rune(c, &next) != ITERATOR_ERROR(STOP_ITERATOR)) {
+//         rune_len += 1;
+//         byte_len += (usize_t)(next - c);
+//         c = next;
+//     }
 
-    return (str_t) {
-        .ptr = (void *)c_str, 
-        .byte_len = byte_len, 
-        // .rune_len = rune_len,
-    };
-}
+//     return (str_t) {
+//         .ptr = (void *)c_str, 
+//         .byte_len = byte_len, 
+//         // .rune_len = rune_len,
+//     };
+// }
 
-
-
-#define S(c_str) (str_t) { .ptr  = (CharUTF8*)(c_str), .byte_len = sizeof(c_str)-1 }
-
-#define len(x)                  \
-    _Generic( (x),              \
-        str_t: ((x).byte_len)   \
-    )                           \
 
 // Error string_from_str(String *self, str_t s) {
 //   Error e;
@@ -256,7 +425,7 @@ str_from_c_str_in(cstr_t s, Allocator *a, str_t *out_self) {
 //     return ALLOCATOR_ERROR(OK);
 // }
 AllocatorError
-string_new_with_cap_in(usize_t byte_cap, Allocator *a, String *out_self) {
+string_new_cap_in(usize_t byte_cap, Allocator *a, String *out_self) {
     TRY(allocator_alloc(a, byte_cap, sizeof(char), (void**)&out_self->ptr));
     out_self->byte_cap = byte_cap;
     out_self->byte_len = 0;
@@ -264,10 +433,31 @@ string_new_with_cap_in(usize_t byte_cap, Allocator *a, String *out_self) {
 }
 AllocatorError
 string_from_in(str_t s, Allocator *a, String *out_self) {
-    TRY(string_new_with_cap_in(s.byte_len, a, out_self));
+    TRY(string_new_cap_in(s.byte_len, a, out_self));
     memcpy(out_self->ptr, s.ptr, s.byte_len);
     out_self->byte_len = s.byte_len;
     return ALLOCATOR_ERROR(OK);
 }
+
+#include "core/fmt/fmt.h"
+
+FmtError
+str_fmt(const str_t *self, StringFormatter *fmt) {
+    TRY(string_formatter_write(fmt, *self));
+    return FMT_ERROR(OK);
+}
+
+#ifdef DBG_PRINT
+
+
+FmtError
+str_dbg_fmt(const str_t *self, StringFormatter *fmt) {
+    TRY(string_formatter_write(fmt, S("\"")));
+    TRY(string_formatter_write(fmt, *self));
+    TRY(string_formatter_write(fmt, S("\"")));
+    return FMT_ERROR(OK);
+}
+
+#endif // DBG_PRINT
 
 #endif // CORE_STRING_IMPL
