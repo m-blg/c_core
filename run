@@ -1,0 +1,7 @@
+#!/usr/bin/bash
+
+path=build
+
+mkdir -p $path
+make $path/$1 -B &&
+./$path/$1
