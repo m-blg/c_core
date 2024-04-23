@@ -6,6 +6,7 @@
 #include "core/runtime.h"
 #define CORE_RUNTIME_IMPL
 #include "core/runtime.h"
+#include "core/string.h"
 #define CORE_IO_IMPL
 #include "core/io.h"
 #include "core/fmt/fmt.h"
@@ -104,12 +105,37 @@ struct Error {
 #define INLINE static inline __attribute((always_inline))
 
 
-[[noreturn]]
-void 
-unimplemented();
-[[noreturn]]
-void 
-unreacheble();
+// INLINE
+// IO_ERROR
+// void
+#define print_error(msg) \
+    fprintf(stderr, "%.*s\nat %s:%d\n", (int)str_len(msg), (char *)(msg).ptr, __FILE__, __LINE__)
+
+// [[noreturn]]
+// void 
+// unimplemented();
+// [[noreturn]]
+// void 
+// unreacheble();
+
+#define GDB_INT __asm__ volatile ("int $3")
+
+// __attribute__ ((noreturn))
+// [[noreturn]]
+// void 
+#define unimplemented()  {  \
+    print_error(S("unimplemented")); \
+    GDB_INT; \
+    panic();  \
+} \
+
+// [[noreturn]]
+// void 
+#define unreacheble()  {  \
+    print_error(S("unreacheble")); \
+    GDB_INT; \
+    panic();  \
+} \
 
 void 
 print_stack_trace();
@@ -132,7 +158,8 @@ panic();
         return e;           \
     }                       \
 
-#define IS_OK(e) (*(int *)&(e) == 0)
+// #define IS_OK(e) (*(int *)&(e) == 0)
+#define IS_OK(e) ((e) == 0)
 #define IS_ERR(e) (*(int *)&(e) != 0)
 
 #define TRY(expr) {                         \
@@ -312,29 +339,17 @@ typedef bool (*PredicateFn)(void*);
 
 // #define CORE_RUNTIME_IMPL
 // #include "runtime.h"
-
-// __attribute__ ((noreturn))
-[[noreturn]]
-void 
-unimplemented()  { 
-    perror("unimplemented");
-    exit(1); // TODO: exit callback
-}
-
-[[noreturn]]
-void 
-unreacheble()  { 
-    perror("unreacheble");
-    exit(1); 
-}
+#include "core/string.h"
 
 void 
 print_stack_trace() {} // TODO(mbgl)
+
+
 // TODO(mblg): invoke gdb here
 [[noreturn]]
 void 
 panic() { 
-    __asm__ volatile ("int $3");
+    GDB_INT;
     print_stack_trace(); 
     exit(1); 
 }

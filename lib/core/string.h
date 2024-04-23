@@ -58,8 +58,12 @@ struct_def(String, {
     usize_t byte_cap;
     usize_t byte_len; // in bytes
     // usize_t rune_len; considered unneeded 
-    Allocator *allocator;
+    Allocator allocator;
 })
+
+// struct_def(String, {
+//     darr_T(uchar_t) data;
+// })
 
 /// Assumed to not own memory
 struct_def(str_t, {
@@ -73,7 +77,7 @@ struct_def(str_t, {
 
 #define string_to_str(self) ((str_t) {.ptr = (self)->ptr, .byte_len = (self)->byte_len })
 
-#define S(c_str) (str_t) { .ptr  = (uchar_t *)(c_str), .byte_len = sizeof(c_str)-1 }
+#define S(c_str) ((str_t) { .ptr  = (uchar_t *)(c_str), .byte_len = sizeof(c_str)-1 })
 
 #define len(x)                  \
     _Generic( (x),              \
@@ -83,9 +87,19 @@ struct_def(str_t, {
 
 AllocatorError 
 string_init(String *self, usize_t byte_cap, Allocator *allocator);
+INLINE
+void 
+string_reset(String *self);
 
 AllocatorError
 string_new_cap_in(usize_t byte_cap, Allocator *a, String *out_self);
+
+AllocatorError
+string_append_str(String *self, str_t str);
+AllocatorError
+string_prepend_str(String *self, str_t str);
+AllocatorError
+string_reserve_cap(String *self, usize_t reserve_cap);
 
 UTF8_Error
 str_next_rune(str_t self, rune_t *out_rune, str_t *out_self);
@@ -104,13 +118,15 @@ struct_decl(StringFormatter)
 enum_decl(FmtError)
 //
 
+// dbg_fmt_proc_decl(str, str_t, self, fmt)
 FmtError
-str_dbg_fmt(const str_t *self, StringFormatter *fmt);
+str_dbg_fmt(const str_t *self, StringFormatter *fmt, void *);
 
 #endif // DBG_PRINT
 
+// fmt_proc_decl(str, str_t, self, fmt)
 FmtError
-str_fmt(const str_t *self, StringFormatter *fmt);
+str_fmt(const str_t *self, StringFormatter *fmt, void *);
 
 #endif // CORE_STRING_H 
 
@@ -298,22 +314,72 @@ str_is_prefix(str_t prefix, str_t str) {
 AllocatorError 
 string_init(String *self, usize_t byte_cap, Allocator *allocator) {
     void *ptr;
-    TRY(allocator_alloc(allocator, byte_cap, 1, &ptr));
+    TRY(allocator_alloc(allocator, byte_cap, sizeof(uchar_t) * 16, &ptr));
 
     *self = (String) {
         .ptr = ptr,
         .byte_cap = byte_cap,
-        .allocator = allocator,
+        .byte_len = 0,
+        .allocator = *allocator,
     };
     return ALLOCATOR_ERROR(OK);
 }
 
 void 
-string_free(String self[non_null]) {
+string_free(String *self) {
     ASSERT(self && self->ptr);
 
-    allocator_free(self->allocator, (void**)&self->ptr);
+    allocator_free(&self->allocator, (void**)&self->ptr);
     memset(self, 0, sizeof(*self));
+}
+
+INLINE
+void 
+string_reset(String *self) {
+    self->byte_len = 0;
+}
+
+#define string_rest_cap(self) (self->byte_cap - self->byte_len)
+
+AllocatorError
+string_append_str(String *self, str_t str) {
+    if (string_rest_cap(self) < str_len(str)) {
+        TRY(string_reserve_cap(self, MAX(self->byte_cap * 2, self->byte_cap + str_len(str))));
+    }
+
+    memcpy(self->ptr + self->byte_len, str.ptr, str.byte_len);
+    self->byte_len += str.byte_len;
+    return ALLOCATOR_ERROR(OK);
+}
+// AllocatorError
+// string_append_str_fmt(String *self, str_t fmt_str, ...) {
+//     if (string_rest_cap(self) < str_len(str)) {
+//         TRY(string_reserve_cap(self, MAX(self->byte_cap * 2, self->byte_cap + str_len(str))));
+//     }
+
+//     memcpy(self->ptr + self->byte_len, str.ptr, str.byte_len);
+//     self->byte_len += str.byte_len;
+//     return ALLOCATOR_ERROR(OK);
+// }
+AllocatorError
+string_prepend_str(String *self, str_t str) {
+    if (string_rest_cap(self) < str_len(str)) {
+        TRY(string_reserve_cap(self, MAX(self->byte_cap * 2, self->byte_cap + str_len(str))));
+    }
+
+    memmove(self->ptr + str.byte_len, self->ptr, self->byte_len);
+    memcpy(self->ptr, str.ptr, str.byte_len);
+    self->byte_len += str.byte_len;
+    return ALLOCATOR_ERROR(OK);
+}
+AllocatorError
+string_reserve_cap(String *self, usize_t reserve_cap) {
+    if (string_rest_cap(self) < reserve_cap) {
+        TRY(allocator_resize(&self->allocator, 
+            MAX(self->byte_cap * 2, self->byte_cap + reserve_cap), 
+            alignof(uchar_t), (void **)&self->ptr));
+    }
+    return ALLOCATOR_ERROR(OK);
 }
 
 // str_t 
@@ -425,24 +491,37 @@ str_from_c_str_in(cstr_t s, Allocator *a, str_t *out_self) {
 //     return ALLOCATOR_ERROR(OK);
 // }
 AllocatorError
-string_new_cap_in(usize_t byte_cap, Allocator *a, String *out_self) {
-    TRY(allocator_alloc(a, byte_cap, sizeof(char), (void**)&out_self->ptr));
-    out_self->byte_cap = byte_cap;
-    out_self->byte_len = 0;
+string_new_cap_in(usize_t byte_cap, Allocator *alloc, String *out_self) {
+    void *ptr;
+    TRY(allocator_alloc(alloc, byte_cap, sizeof(uchar_t) * 16, &ptr));
+
+    *out_self = (String) {
+        .ptr = ptr,
+        .byte_cap = byte_cap,
+        .byte_len = 0,
+        .allocator = *alloc,
+    };
     return ALLOCATOR_ERROR(OK);
 }
 AllocatorError
-string_from_in(str_t s, Allocator *a, String *out_self) {
-    TRY(string_new_cap_in(s.byte_len, a, out_self));
+string_from_in(str_t s, Allocator *alloc, String *out_self) {
+    void *ptr;
+    TRY(allocator_alloc(alloc, s.byte_len, alignof(uchar_t), &ptr));
+
+    *out_self = (String) {
+        .ptr = ptr,
+        .byte_cap = s.byte_len,
+        .byte_len = s.byte_len,
+        .allocator = *alloc,
+    };
     memcpy(out_self->ptr, s.ptr, s.byte_len);
-    out_self->byte_len = s.byte_len;
     return ALLOCATOR_ERROR(OK);
 }
 
 #include "core/fmt/fmt.h"
 
 FmtError
-str_fmt(const str_t *self, StringFormatter *fmt) {
+str_fmt(const str_t *self, StringFormatter *fmt, void *_) {
     TRY(string_formatter_write(fmt, *self));
     return FMT_ERROR(OK);
 }
@@ -451,7 +530,7 @@ str_fmt(const str_t *self, StringFormatter *fmt) {
 
 
 FmtError
-str_dbg_fmt(const str_t *self, StringFormatter *fmt) {
+str_dbg_fmt(const str_t *self, StringFormatter *fmt, void *_) {
     TRY(string_formatter_write(fmt, S("\"")));
     TRY(string_formatter_write(fmt, *self));
     TRY(string_formatter_write(fmt, S("\"")));

@@ -33,6 +33,7 @@ io_init(Allocator alloc[non_null]);
 
 #define CORE_IO_IMPL
 #include "core/io.h"
+#include "core/string.h"
 
 void
 default_raise(Error e) { }

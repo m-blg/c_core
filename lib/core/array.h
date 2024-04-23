@@ -28,7 +28,7 @@
 // "core/fmt.h"
 enum_decl(FmtError);
 struct_decl(StringFormatter);
-typedef FmtError (FmtFn)(void *, StringFormatter *);
+typedef FmtError (FmtFn)(void *, StringFormatter *, void *);
 //
 
 struct_def(SliceVES, { 
@@ -110,7 +110,7 @@ slice_copy_data(slice_t *self, slice_t *out_slice);
 
 #ifdef DBG_PRINT
 FmtError
-slice_dbg_fmt(slice_t *self, StringFormatter *fmt);
+slice_dbg_fmt(slice_t *self, StringFormatter *fmt, void *_);
 #endif // DBG_PRINT
 
 
@@ -192,7 +192,7 @@ slice_copy_data(slice_t *self, slice_t *out_slice) {
 
 
 FmtError
-slice_dbg_fmt(slice_t *self, StringFormatter *fmt) {
+slice_dbg_fmt(slice_t *self, StringFormatter *fmt, void *_) {
     auto fo = (Formattable) {
         ._vtable = (Formattable_VTable) {
             .fmt = self->el_dbg_fmt,

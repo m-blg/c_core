@@ -6,6 +6,7 @@
 #define CORE_IO_H
 
 #include "core/array.h"
+#include "core/string.h"
 
 
 enum_def(IOError, 
@@ -35,6 +36,12 @@ struct_def(OutputFileStream, {
     void *e_cursor;
     FILE *file;
 })
+struct_def(OutputStringStream, {
+    slice_T(u8_t) buffer;
+    void *b_cursor;
+    void *e_cursor;
+    FILE *file;
+})
 
 #define output_file_stream_reset_cursors(self) ((self)->b_cursor = (self)->e_cursor = (self)->buffer.ptr)
 #define output_file_stream_pending_len(self) ((usize_t)(self)->e_cursor - (usize_t)(self)->b_cursor)
@@ -53,6 +60,12 @@ IOError
 output_file_stream_flush(OutputFileStream self[non_null]);
 StreamWriter
 output_file_stream_stream_writer(OutputFileStream self[non_null]);
+
+
+IOError
+output_string_stream_write(String self[non_null], usize_t data_size, u8_t data[data_size]);
+IOError
+output_string_stream_flush(String self[non_null]);
 
 #define KNRM  "\x1B[0m"
 #define KRED  "\x1B[31m"
@@ -168,22 +181,45 @@ output_file_stream_flush(OutputFileStream self[non_null]) {
 }
 
 
-IOError
-_output_file_stream_write(void *self, usize_t data_size, u8_t data[data_size]) {
-    return output_file_stream_write((OutputFileStream *)self, data_size, data);
-}
-IOError
-_output_file_stream_flush(void *self) {
-    return output_file_stream_flush((OutputFileStream *)self);
-}
+// IOError
+// _output_file_stream_write(void *self, usize_t data_size, u8_t data[data_size]) {
+//     return output_file_stream_write((OutputFileStream *)self, data_size, data);
+// }
+// IOError
+// _output_file_stream_flush(void *self) {
+//     return output_file_stream_flush((OutputFileStream *)self);
+// }
 StreamWriter
 output_file_stream_stream_writer(OutputFileStream self[non_null]) {
     return (StreamWriter) {
         ._vtable = (StreamWriter_VTable) {
-            .write = _output_file_stream_write,
-            .flush = _output_file_stream_flush,
+            .write = (StreamWriter_WriteFn *)output_file_stream_write,
+            .flush = (StreamWriter_FlushFn *)output_file_stream_flush,
         },
         .data = (void *)self,
     };
 }
+
+
+IOError
+output_string_stream_write(String self[non_null], usize_t data_size, u8_t data[data_size]) {
+    ASSERT_OK(string_reserve_cap(self, data_size));
+    ASSERT_OK(string_append_str(self, (str_t) {.ptr = data, .byte_len = data_size}));
+    return IO_ERROR(OK);
+}
+IOError
+output_string_stream_flush(String self[non_null]) {
+    return IO_ERROR(OK);
+}
+StreamWriter
+string_stream_writer(String self[non_null]) {
+    return (StreamWriter) {
+        ._vtable = (StreamWriter_VTable) {
+            .write = (StreamWriter_WriteFn *)output_string_stream_write,
+            .flush = (StreamWriter_FlushFn *)output_string_stream_flush,
+        },
+        .data = (void *)self,
+    };
+}
+
 #endif // CORE_IO_IMPL

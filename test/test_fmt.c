@@ -33,7 +33,8 @@
 //     ASSERT_OK(string_formatter_writeln(&fmt, S(KYEL"\ntest\n"aaa(3, A))));
 //     TRY(stream_writer_flush(&fmt.target));
 // }
-
+#define STRINGIFY_VA(args...) #args
+#define VA(...) STRINGIFY_VA(__VA_OPT__(,) __VA_ARGS__)
 
 void
 test1() {
@@ -91,13 +92,6 @@ str_to_u64(str_t s, u64_t *val) {
     return true;
 }
 
-#define fobj_T(___prefix, val) ((Formattable) {\
-    .data = val, \
-    ._vtable = (Formattable_VTable) {\
-        .fmt = (FmtFn *)___prefix##_fmt\
-    },\
-    })\
-
 
 
 
@@ -105,7 +99,6 @@ str_to_u64(str_t s, u64_t *val) {
 // print_fmt(str_t fmt_str, ...) {
 
 // } 
-
 
 void
 test3() {
@@ -125,12 +118,41 @@ test3() {
     // print(i32, &(i32_t){x + 1});
     // println(i32, &x);
 
-    println_fmt(S("Hi %s!"), S("there"));
+    i64_t x2 = 1002100310041005;
+    u32_t ux = -1u;
+    // u64_t ulx = -1u;
+    u64_t ulx = 10021003100410051006lu;
+    
+    println_fmt(S(
+        "Hi %s!\n"
+        "fmt_obj: %v\n"
+        "i32: %d\n"
+        "u32: %u\n"
+        "i64: %ld\n"
+        "u64: %lu"
+        ), S("there"),
+            fmt_obj_pref(i32_dbg, &x),
+            x + 3,
+            ux,
+            x2,
+            ulx);
+    // println_fmt(S("Hi %v!"), fmt_obj_T(i32_dbg, &x));
     // print_fmt(S("Hi "), 
     //     fobj_T(i32, 3),
     //     fobj_prim(3),
     //     fobj_T(str, S(" text")));
-    // println(slice, &b);
+    println_fmt(S(VA("3", "4")));
+}
+
+void
+test4() {
+    println_fmt(S(
+            "%d \\% %d = %d\n"
+            "%d \\\\ %d \\= %d\n"
+        ), 
+            8, 3, 8 % 3,
+            12, 3, 8 / 3
+            );
 }
 
 int main() {
@@ -138,4 +160,5 @@ int main() {
     test1();
     test2();
     test3();
+    test4();
 }

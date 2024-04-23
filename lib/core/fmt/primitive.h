@@ -4,22 +4,21 @@
 #define CORE_FMT_H
 #define CORE_FMT_PRIMITIVE_H
 
-FmtError
-i32_dbg_fmt(const i32_t i[non_null], StringFormatter fmt[non_null]) {
+dbg_fmt_proc_def(i32, i32_t, i, fmt, {
     constexpr usize_t size = 64;
     uchar_t buffer[size];
     auto len = snprintf((char *)buffer, size, "%d", *i);
-    auto s = (str_t) {
+    auto s = ((str_t) {
         .ptr = buffer,
         .byte_len = (usize_t)len,
-    };
+    });
 
     TRY(string_formatter_write(fmt, s));
     return FMT_ERROR(OK);
-}
+})
 
 FmtError
-i32_fmt(const i32_t i[non_null], StringFormatter fmt[non_null]) {
+i32_fmt(const i32_t i[non_null], StringFormatter fmt[non_null], void *) {
     constexpr usize_t size = 64;
     uchar_t buffer[size];
     auto len = snprintf((char *)buffer, size, "%d", *i);
