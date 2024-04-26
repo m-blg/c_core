@@ -159,8 +159,9 @@ panic();
     }                       \
 
 // #define IS_OK(e) (*(int *)&(e) == 0)
+// #define IS_ERR(e) (*(int *)&(e) != 0)
 #define IS_OK(e) ((e) == 0)
-#define IS_ERR(e) (*(int *)&(e) != 0)
+#define IS_ERR(e) ((e) != 0)
 
 #define TRY(expr) {                         \
     auto _e_ = (expr);                        \
@@ -240,13 +241,17 @@ allocator_free(Allocator* self, void **ptr);
 AllocatorError
 allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_ptr);
 
+#define allocator_alloc_T(self, T, out_ptr) \
+    allocator_alloc(self, sizeof(T), alignof(T), (void **)out_ptr)
+#define allocator_alloc_zT(self, T, out_ptr) \
+    allocator_alloc_z(self, sizeof(T), alignof(T), (void **)out_ptr)
 /// @brief Allocates array of T of len *count*. 
 ///    Each element is aligned with the alignment requirement for T.
 #define allocator_alloc_n(self, T, count, out_ptr) \
-    allocator_alloc(self, sizeof(T) * count, alignof(T), out_ptr)
+    allocator_alloc(self, sizeof(T) * count, alignof(T), (void **)out_ptr)
 
 #define allocator_alloc_zn(self, T, count, out_ptr) \
-    allocator_alloc_z(self, sizeof(T) * count, alignof(T), out_ptr)
+    allocator_alloc_z(self, sizeof(T) * count, alignof(T), (void **)out_ptr)
 
 /// size1, size2 - adhere to sizeof semantics
 /// align1, align2 - adhere to alignof semantics

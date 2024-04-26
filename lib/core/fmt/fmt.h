@@ -138,12 +138,12 @@ string_formatter_write_fmt(StringFormatter *fmt, str_t fmt_str, ...);
 
 #define print_fmt(fmt_str, args...) { \
     auto fmt = string_formatter_default(&g_ctx.stdout_sw); \
-    ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str __VA_OPT__(,) args)); \
+    ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str, ##args)); \
     ASSERT_OK(stream_writer_flush(&fmt.target)); \
 }                                                                     
 #define println_fmt(fmt_str, args...) { \
     auto fmt = string_formatter_default(&g_ctx.stdout_sw); \
-    ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str __VA_OPT__(,) args)); \
+    ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str, ##args)); \
     ASSERT_OK(string_formatter_write(&fmt, S("\n"))); \
     ASSERT_OK(stream_writer_flush(&fmt.target)); \
 }                                                                     

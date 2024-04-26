@@ -292,6 +292,10 @@ darr_get_i(darr_t self, isize_t index) {
 #define darr_new_cap_in_T(T, cap, allocator, out_self)\
     darr_new_cap_in(sizeof(T), alignof(T), cap, allocator, out_self)
 
+// slice_t
+// darr_slice(darr_t self, usize_t b, usize_t e) {
+//     unimplemented();
+// }
 
 #undef CORE_ARRAY_H
 #endif // CORE_ARRAY_DARR_H
