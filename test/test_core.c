@@ -168,9 +168,9 @@ Test(core, alignment) {
 Test(core, fn) {
     TEST_PRINT(core, fn);
     F = test_fn;
-    for_in_range(i, 0, 3, {
+    for_in_range(i, 0, 3) {
         printf("%d\n", F(i));
-    })
+    }
 }
 
 struct_def(St, {
@@ -190,9 +190,9 @@ int main() {
     TEST_PRINT(core, fn);
     F = test_fn;
     int x = 5;
-    for_in_range(i, 0, x-i, {
+    for_in_range(i, 0, x-i) {
         printf("%d %d\n", i, x-i);
-    })
+    }
 }
 
 

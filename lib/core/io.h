@@ -1,8 +1,9 @@
 #include "core/impl_guards.h"
 
 
+enum_decl(IOError)
 
-#ifndef CORE_IO_H
+#if CORE_HEADER_GUARD(CORE_IO)
 #define CORE_IO_H
 
 #include "core/array.h"
@@ -175,6 +176,7 @@ output_file_stream_flush(OutputFileStream self[non_null]) {
         self->b_cursor = ptr_shift(self->b_cursor, written);
         return IO_ERROR(WRITE);
     }
+    fflush(self->file);
     output_file_stream_reset_cursors(self);
 
     return IO_ERROR(OK);

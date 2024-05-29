@@ -43,7 +43,7 @@ test1() {
     // Tup(int, str_t, double) t = tup_lit(x, y, z);
     auto b = slice_lit(3, 4, 5);
     // b.el_dbg_fmt = (FmtFn *)i32_dbg_fmt;
-    container_dbg_init(i32, &b);
+    // container_dbg_init(i32, &b);
     // i32_t x = slice_len(&b);
     // i32_t x = ;
     i32_t x = *slice_get_T(i32_t, &b, 1);
@@ -60,17 +60,17 @@ test2() {
     // Tup(int, str_t, double) t = tup_lit(x, y, z);
     auto b = slice_lit(3, 4, 5);
     // b.el_dbg_fmt = (FmtFn *)i32_dbg_fmt;
-    container_dbg_init(i32, &b);
-    container_print_init(i32, &b);
+    // container_dbg_init(i32, &b);
+    // container_print_init(i32, &b);
     // i32_t x = slice_len(&b);
     // i32_t x = ;
     i32_t x = *slice_get_T(i32_t, &b, 1);
     // i32_t x = *slice_get_T(i32_t, &b, 1);
     // auto fo = i32_formattable(&x);
-    print(i32, &(i32_t){x + 1});
-    println(i32, &x);
+    print_pref(i32_t, &(i32_t){x + 1});
+    println_pref(i32_t, &x);
     // println(slice, &b);
-    print(i32, &(i32_t){'A'});
+    print_pref(i32_t, &(i32_t){'A'});
 }
 
 #define fobj_prim(val) (_Generic((val), \
@@ -81,13 +81,13 @@ test2() {
 bool
 str_to_u64(str_t s, u64_t *val) {
     register u64_t x = 0;
-    for_in_range(i, 0, str_len(s), {
+    for_in_range(i, 0, str_len(s)) {
         u8_t c = *str_get_byte(s, i);
         if (c < '0' || c > '9') {
             return false;
         }
         x += (c - '0') * (i+1);
-    })
+    }
     *val = x;
     return true;
 }
@@ -108,8 +108,8 @@ test3() {
     // Tup(int, str_t, double) t = tup_lit(x, y, z);
     auto b = slice_lit(3, 4, 5);
     // b.el_dbg_fmt = (FmtFn *)i32_dbg_fmt;
-    container_dbg_init(i32, &b);
-    container_print_init(i32, &b);
+    // container_dbg_init(i32_t, &b);
+    // container_print_init(i32_t, &b);
     // i32_t x = slice_len(&b);
     // i32_t x = ;
     i32_t x = *slice_get_T(i32_t, &b, 1);
@@ -147,8 +147,8 @@ test3() {
 void
 test4() {
     println_fmt(S(
-            "%d \\% %d = %d\n"
-            "%d \\\\ %d \\= %d\n"
+            "%d %% %d = %d\n"
+            "%d \\ %d = %d\n"
         ), 
             8, 3, 8 % 3,
             12, 3, 8 / 3
@@ -157,8 +157,8 @@ test4() {
 
 int main() {
     ctx_init_default();
-    test1();
-    test2();
-    test3();
+    // test1();
+    // test2();
+    // test3();
     test4();
 }

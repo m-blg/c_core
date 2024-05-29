@@ -1,3 +1,5 @@
+#include "core/impl_guards.h"
+
 #ifdef CORE_IMPL
 #define CORE_LIST_IMPL
 #endif // CORE_IMPL
@@ -5,73 +7,195 @@
 #ifndef CORE_LIST_H
 #define CORE_LIST_H
 
-#include "core/core.c"
-#include "core/fmt.c"
+#include "core/core.h"
+#include "core/fmt/fmt.h"
 
 
-struct_def(ListVES_Node, {
-    ListVES_Node *next;
-    ListVES_Node *prev;
+struct_def(List_dynT_Node, {
+    List_dynT_Node *next;
+    List_dynT_Node *prev;
 
-    alignas(MAX_ALIGNMENT) 
-    u8_t data[]; 
+    // want to support arbitrary alignment
+    // alignas(MAX_ALIGNMENT) 
+    // u8_t data[]; 
 })
 
-/// @brief VES - Variable Element Size
-struct_def(ListVES, {
-    ListVES_Node *head;
-    ListVES_Node *tail;
-    usize_t el_size;
+struct_def(List_dynT, {
+    List_dynT_Node *head;
+    List_dynT_Node *tail;
     usize_t len;
-    Allocator allocator;
+    usize_t node_data_size;
+    usize_t node_data_align;
+    TypeId node_data_tid;
+    Allocator alloc;
 })
 
-typedef ListVES * list_t
-#define ListVES_T(T) ListVES
+typedef List_dynT * list_t;
 #define list_T(T) list_t
 
-struct_def(ListIterVES, {
-    ListVES_Node *cursor;
+struct_def(List_dynT_Iter, {
+    List_dynT_Node *cursor;
     usize_t len;
+    usize_t node_data_align;
 })
+
+AllocatorError
+list_node_alloc(List_dynT *self, void *data, List_dynT_Node **out_node);
+INLINE
+void *
+list_node_data(List_dynT_Node *node, usize_t data_align);
+
+
+#define list_len(self) ((self)->len)
+
+INLINE
+void
+list_init(List_dynT *self, TypeId el_tid, Allocator *alloc);
+AllocatorError
+list_new_in(Allocator alloc[non_null],
+            TypeId el_tid,
+            list_t *out_self);
+void
+list_free(list_t *self);
+void
+list_free_arena(list_t *self);
+
+void
+list_push_node(list_t self, List_dynT_Node *node);
+AllocatorError
+list_push(list_t self, void *data);
+
+// #define for_in_list(item, list) for (auto item = (list)->head; item != nullptr; item = item.next)
+#define for_in_list_T(T, item, list, body) for (auto _item_ = (list)->head; _item_ != nullptr; _item_ = _item_->next) { \
+    T *item = list_node_data(_item_, list->node_data_align); \
+    body \
+} \
+
+INLINE
+List_dynT_Iter
+list_iter(list_t self);
+
+INLINE
+void NLB(*)
+list_iter_next(List_dynT_Iter *iter);
 
 #endif // CORE_LIST_H
 
-#if defined(CORE_LIST_IMPL) && !defined(CORE_LIST_I)
+#if CORE_IMPL_GUARD(CORE_LIST)
 #define CORE_LIST_I
-void
-list_init(Self *self, Allocator *allocator) {
-    self->_head_ = nullptr;
-    self->_tail_ = nullptr;
-    self->_len_ = 0;
-    self->_allocator_ = allocator;
+
+AllocatorError
+list_node_alloc(List_dynT *self, void *data, List_dynT_Node **out_node)  {
+    void *_data;
+    TRY(alloc_sequentially_two(sizeof(List_dynT_Node), alignof(List_dynT_Node), 
+                  self->node_data_size, self->node_data_align,
+                  &self->alloc,
+                  (void **)out_node, (void **)&_data));
+    
+    memcpy(_data, data, self->node_data_size);
+
+    return ALLOCATOR_ERROR(OK);
+} 
+AllocatorError
+list_node_alloc_size_align(List_dynT *self, usize_t data_size, usize_t data_align, List_dynT_Node **out_node)  {
+    void *_data;
+    TRY(alloc_sequentially_two(sizeof(List_dynT_Node), alignof(List_dynT_Node), 
+                  data_size, data_align,
+                  &self->alloc,
+                  (void **)out_node, (void **)&_data));
+    
+    return ALLOCATOR_ERROR(OK);
+} 
+
+INLINE
+void *
+list_node_data(List_dynT_Node *node, usize_t data_align)  {
+    return align_forward(node + 1, data_align);
 }
-Error
-list_new_in(Allocator allocator[non_null],
-                  Allocator self_allocator[non_null],
-                  Self **out_self)
+
+INLINE
+void
+list_init(List_dynT *self, TypeId el_tid, Allocator *alloc) {
+    *self = (List_dynT) {
+        .node_data_size = type_prop(el_tid, size),
+        .node_data_align = type_prop(el_tid, align),
+        .node_data_tid = el_tid,
+        .alloc = *alloc,
+    };
+}
+AllocatorError
+list_new_in(Allocator alloc[non_null],
+            TypeId el_tid,
+            list_t *out_self)
 {
-    TRY(allocator_alloc(allocator, sizeof(Self), (void**)out_self));
-    list_init(*out_self, self_allocator);
-    return ERROR_OK;
+    TRY(allocator_alloc(alloc, sizeof(List_dynT), alignof(List_dynT), (void**)out_self));
+    list_init(*out_self, el_tid, alloc);
+    return ALLOCATOR_ERROR(OK);
 }
 void
-list_free(Self *self) {
-    for (auto node = self->head; node != nullptr; ) {
+list_free(list_t *self) {
+    auto alloc = (*self)->alloc;
+    for (auto node = (*self)->head; node != nullptr; ) {
         auto next = node->next;
-        allocator_free(self->allocator, (void**)&node);
+        allocator_free(&alloc, (void**)&node);
         node = next;
     }
+    allocator_free(&alloc, (void**)self);
 }
-/* CONTRACT: node should be allocated by self->allocator */
 void
-list_push_node(Self *self, Node *node) {
-    auto prev = self->_tail_;
-    self->_tail_ = node;
-    prev->_next_ = node;
-    node->_next_ = nullptr;
-    node->_prev_ = prev;
+list_free_arena(list_t *self) {
+    auto alloc = (*self)->alloc;
+    allocator_free(&alloc, (void**)self);
+}
+
+/// CONTRACT: node should be allocated by self->allocator
+/// @param[in, out] self
+void
+list_push_node(list_t self, List_dynT_Node *node) {
+    if ((self)->head == nullptr) {
+        (self)->head = node;
+        (self)->tail = node;
+        self->len += 1;
+        return;
+    }
+    auto prev = self->tail;
+    self->tail = node;
+    prev->next = node;
+    node->next = nullptr;
+    node->prev = prev;
     self->len += 1;
+}
+
+/// @param[in, out] self
+AllocatorError
+list_push(list_t self, void *data) {
+    List_dynT_Node *node;
+    TRY(list_node_alloc(self, data, &node));
+    list_push_node(self, node);
+    return ALLOCATOR_ERROR(OK);
+}
+
+INLINE
+List_dynT_Iter
+list_iter(list_t self) {
+    return (List_dynT_Iter) {
+        .cursor = self->head,
+        .len = self->len,
+        .node_data_align = self->node_data_align,
+    };
+}
+
+INLINE
+void NLB(*)
+list_iter_next(List_dynT_Iter *iter) {
+    if (iter->cursor == nullptr) {
+        return nullptr;
+    }
+
+    auto cur = iter->cursor;
+    iter->cursor = iter->cursor->next;
+    iter->len -= 1;
+    return list_node_data(cur, iter->node_data_align);
 }
 
 #endif // CORE_LIST_IMPL
@@ -113,9 +237,9 @@ list_push_node(Self *self, Node *node) {
 // #endif
 
 
-// #define STREAM_WRITER_STDOUT (StreamWriter) {\
-//     .\
-// }\
+// #define STREAM_WRITER_STDOUT (StreamWriter) {
+//     .
+// }
 
 // #define STRING_FORMATTER_DEFAULT_DBG_PRINT_PAD_STRING "    "
 // #define STRING_FORMATTER_DEFAULT_DBG_PRINT

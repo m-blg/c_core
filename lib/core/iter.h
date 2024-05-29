@@ -4,22 +4,31 @@
     ListIter: list_iter_next(iter)        \
     )                                       \
 
-#define for_in(iter, item, body)  {                  \
-    auto _iter_ = (iter);                            \
+#define for_in_iter_dyn(iter, item, body)  {                  \
+    register auto _iter_ = (iter);                            \
     typeof(iter_next(_iter_)) item = iter_next(_iter_);       \
     for (; item != nullptr; item = iter_next(_iter_)) {   \
         body                                         \
     }                                                \
 }
+#define for_in_iter_pref(__pref, item, iter, body)  { \
+    auto _iter_ = (iter); \
+    typeof(__pref##_iter_next(&_iter_)) item = __pref##_iter_next(&_iter_); \
+    for (; item != nullptr; item = __pref##_iter_next(&_iter_)) { \
+        body \
+    } \
+}
 
-#define iter_find(iter, pred, out_item) {                                       \
-    for_in(iter, node, {                                                        \
-        if (pred(node)) {                                                       \
-            out_item = node;                                                    \
-        }                                                                       \
-    })                                                                          \
-    out_item = nullptr;                                                         \
-}                                                                               \
+#define iter_pref_find(__pref, iter, pred, out_item) { \
+    for_in_iter_pref(__pref, _item_, iter, { \
+        if (pred(_item_)) { \
+            *(out_item) = _item_; \
+            goto iter_pref_find_out; \
+        } \
+    }) \
+    *(out_item) = nullptr; \
+    iter_pref_find_out: \
+} \
 
 #define iter_find(iter, pred, out_item) {                                       \
     for_in(iter, node, {                                                        \
@@ -58,4 +67,4 @@ filter_next(Iter *self) {                     \
         item = next(self->iter);              \
     }                                         \
     return nullptr;                           \
-}                                             \
+}                                             

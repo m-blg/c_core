@@ -6,16 +6,16 @@
 #endif // CORE_FMT_IMPL
 
 
+enum_decl(FmtError);
+struct_decl(StringFormatter);
 
+typedef FmtError (FmtFn)(void *, StringFormatter *, void *);
 
-// #if CORE_DS_GUARD(CORE_FMT, FORMATTER)
-// #define CORE_FMT_D
-// #define CORE_FMT_FORMATTER_D
+struct_decl(StreamWriter);
+struct_decl(str_t);
 
-
-// #undef CORE_FMT_D
-// #endif // CORE_FMT_DECL
-
+struct_decl(Formattable)
+struct_decl(Formattable_VTable)
 
 
 
@@ -27,15 +27,8 @@
 
 #include "core/core.h"
 
-enum_decl(FmtError);
-struct_decl(StringFormatter);
-
-typedef FmtError (FmtFn)(void *, StringFormatter *, void *);
 
 #define FMT_ERROR(ERR) ((FmtError)FMT_ERROR_##ERR)
-
-struct_decl(StreamWriter);
-struct_decl(str_t);
 
 INLINE
 StringFormatter
@@ -50,9 +43,6 @@ string_formatter_write(StringFormatter *fmt, const str_t s);
 FmtError
 string_formatter_writeln(StringFormatter *fmt, const str_t s);
 
-
-struct_decl(Formattable)
-struct_decl(Formattable_VTable)
 
 FmtError 
 formattable_fmt(Formattable *self, StringFormatter *fmt);
@@ -119,13 +109,13 @@ prefix##_dbg_fmt(Self *self, StringFormatter *fmt, void *) { body } \
     ASSERT_OK(stream_writer_flush(&fmt.target)); \
 } \
 
-#define print(___prefix, val) { \
+#define print_pref(___prefix, val) { \
     auto fmt = string_formatter_default(&g_ctx.stdout_sw); \
     ASSERT_OK(___prefix##_fmt((val), &fmt, nullptr)); \
     ASSERT_OK(stream_writer_flush(&fmt.target)); \
 } \
 
-#define println(___prefix, val) { \
+#define println_pref(___prefix, val) { \
     auto fmt = string_formatter_default(&g_ctx.stdout_sw); \
     ASSERT_OK(___prefix##_fmt((val), &fmt, nullptr)); \
     ASSERT_OK(string_formatter_write(&fmt, S("\n"))); \
@@ -136,6 +126,8 @@ prefix##_dbg_fmt(Self *self, StringFormatter *fmt, void *) { body } \
 FmtError
 string_formatter_write_fmt(StringFormatter *fmt, str_t fmt_str, ...);
 
+// _BUG: doesn't print last line
+// fixed: added fflush in ofs_flush
 #define print_fmt(fmt_str, args...) { \
     auto fmt = string_formatter_default(&g_ctx.stdout_sw); \
     ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str, ##args)); \
@@ -199,14 +191,14 @@ string_formatter_pad_dec(StringFormatter *self) {
 FmtError
 string_formatter_write(StringFormatter *fmt, const str_t s) {
     if (!fmt->is_line_padded) {
-        for_in_range(_, 0, fmt->pad_level, {
+        for_in_range(_, 0, fmt->pad_level) {
             if (stream_writer_write(&fmt->target, 
                 fmt->pad_string.byte_len, 
                 fmt->pad_string.ptr) != IO_ERROR(OK) ) 
             {
                 return FMT_ERROR(ERROR);
             }
-        })
+        }
         fmt->is_line_padded = true;
     }
     if (stream_writer_write(&fmt->target, s.byte_len, s.ptr) != IO_ERROR(OK)) {
@@ -246,55 +238,59 @@ string_formatter_done(StringFormatter *fmt) {
 INLINE
 FmtError
 string_formatter_pad_line(StringFormatter *fmt) {
-    for_in_range(_, 0, fmt->pad_level, {
+    for_in_range(_, 0, fmt->pad_level) {
         TRY(string_formatter_write_no_pad(fmt, fmt->pad_string));
-    })
+    }
     fmt->is_line_padded = true;
     return FMT_ERROR(OK);
 }
 
+INLINE 
+str_t
+_str_from_begin_end_sub1(str_t b, str_t e) {
+    str_t s =  str_from_begin_end(b, e);
+    s.byte_len -= 1;
+    return s;
+}
 
+// TODO: fix iteration byte counting
 FmtError
 string_formatter_write_fmt(StringFormatter *fmt, str_t fmt_str, ...) {
     va_list args;
     va_start(args, fmt_str);
 
-    str_t s = (str_t) {
-        .ptr = fmt_str.ptr,
-        .byte_len = 0,
-    };
+    str_t s = (str_t) { };
+    str_t e_fmt_str = fmt_str;
     
 
     rune_t r;
-    while (str_len(fmt_str) > 0) {
+    while (str_len(e_fmt_str) > 0) {
         constexpr usize_t size = 64;
         uchar_t buffer[size];
         int len = 0;
 
-        ASSERT_OK(str_next_rune(fmt_str, &r, &fmt_str));
-        if (r == '\\') {
+        ASSERT_OK(str_next_rune(e_fmt_str, &r, &e_fmt_str));
+        if (r == '%') {
+            s = str_from_begin_end(fmt_str, e_fmt_str);
+            s.byte_len -= 1;
             if (str_len(s) > 0) {
                 if (!fmt->is_line_padded) {
                     TRY(string_formatter_pad_line(fmt));
                 }
                 TRY(string_formatter_write_no_pad(fmt, s));
+                fmt_str = e_fmt_str;
             }
-            s = (str_t) {
-                .ptr = fmt_str.ptr,
-                .byte_len = 1,
-            };
-            ASSERT_OK(str_next_rune(fmt_str, &r, &fmt_str));
-        } 
-        else if (r == '%') {
-            if (str_len(s) > 0) {
-                if (!fmt->is_line_padded) {
-                    TRY(string_formatter_pad_line(fmt));
-                }
-                TRY(string_formatter_write_no_pad(fmt, s));
-            }
-            ASSERT_OK(str_next_rune(fmt_str, &r, &fmt_str));
+
+            ASSERT_OK(str_next_rune(e_fmt_str, &r, &e_fmt_str));
             switch (r)
             {
+            case '%':
+                s = (str_t) {
+                    .ptr = fmt_str.ptr,
+                    .byte_len = 1,
+                };
+                continue;
+                break;
             case '+':
                 string_formatter_pad_inc(fmt);
                 break;
@@ -336,7 +332,7 @@ string_formatter_write_fmt(StringFormatter *fmt, str_t fmt_str, ...) {
                     return FMT_ERROR(ERROR);
                 }
 num_write:
-                auto s = (str_t) {
+                s = (str_t) {
                     .ptr = buffer,
                     .byte_len = (usize_t)len,
                 };
@@ -355,19 +351,21 @@ num_write:
                 break;
             }
 
+            fmt_str = e_fmt_str;
             s = (str_t) {
                 .ptr = fmt_str.ptr,
                 .byte_len = 0,
             };
         } else {
-            s.byte_len += 1;
             if (r == '\n') {
+                s = str_from_begin_end(fmt_str, e_fmt_str);
                 if (str_len(s) > 0) {
                     if (!fmt->is_line_padded) {
                         TRY(string_formatter_pad_line(fmt));
                     }
                     TRY(string_formatter_write_no_pad(fmt, s));
                 }
+                fmt_str = e_fmt_str;
                 s = (str_t) {
                     .ptr = fmt_str.ptr,
                     .byte_len = 0,
@@ -376,6 +374,7 @@ num_write:
             }
         }
     }
+    s = str_from_begin_end(fmt_str, e_fmt_str);
     if (str_len(s) > 0) {
         TRY(string_formatter_write(fmt, s));
     }

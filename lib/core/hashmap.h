@@ -43,23 +43,25 @@ struct_def(HashMap, {
     SetFn *key_set;
 
     SetFn *value_set;
+    TypeId key_tid;
+    TypeId value_tid;
 
     Allocator alloc;
 })
 
 typedef HashMap * hashmap_t;
 
+// hashmap_T(str_t, any_t)
 #define hashmap_T(key, val) hashmap_t
 
+#define hashmap_len(self) ((self)->count)
 
-// hashmap_T(str_t, any_t)
-
+#define hashmap_new_cap_in_T(KT, VT, cap, alloc, out_map) \
+    hashmap_new_cap_in(typeid_of(KT), typeid_of(VT), cap, alloc, out_map)
 AllocatorError
 hashmap_new_cap_in(
-    usize_t key_size, usize_t key_align,
-    HashFn *key_hash, EqFn *key_eq, SetFn *key_set,
-    usize_t value_size, usize_t value_align,
-    SetFn *value_set,
+    TypeId key_tid,
+    TypeId value_tid,
     usize_t cap, Allocator *alloc, hashmap_t *out_map);
 void
 hashmap_free(hashmap_t *self);
@@ -201,6 +203,9 @@ hashmap_grow(hashmap_t *self, usize_t fit_cap) {
     return ALLOCATOR_ERROR(OK);
 }
 
+#define _hashmap_value_set(self, lval, rval) \
+    (type_vt((self)->value_tid, set)(lval, rval))
+
 AllocatorError
 hashmap_add_key_val(hashmap_t *self, void *key, void *value, HashMap_Bucket *bucket) {
     if ((*self)->count >= hashmap_cap(*self)-1) {
@@ -213,21 +218,36 @@ hashmap_add_key_val(hashmap_t *self, void *key, void *value, HashMap_Bucket *buc
     bucket->key = slice_get_unchecked(&(*self)->keys, count);
     bucket->value = slice_get_unchecked(&(*self)->values, count);
 
-    (*self)->key_set(bucket->key, key);
-    (*self)->value_set(bucket->value, value);
+    if ((*self)->key_set) {
+        (*self)->key_set(bucket->key, key);
+    } else {
+        memcpy(bucket->key, key, (*self)->keys.el_size);
+    }
+    if ((*self)->value_set) {
+        (*self)->value_set(bucket->value, value);
+    } else {
+        memcpy(bucket->value, value, (*self)->values.el_size);
+    }
+
     (*self)->count += 1;
 
     return ALLOCATOR_ERROR(OK);
 }
 
-void
+AllocatorError
 hashmap_set(hashmap_t *self, void *key, void *value) {
     auto bucket = hashmap_get_bucket(*self, key);
     if (bucket == nullptr || bucket->key == nullptr) {
-        hashmap_add_key_val(self, key, value, bucket);
-        return;
+        TRY(hashmap_add_key_val(self, key, value, bucket));
+        return ALLOCATOR_ERROR(OK);
     }
-    (*self)->value_set(bucket->value, value);
+    if ((*self)->value_set) {
+        (*self)->value_set(bucket->value, value);
+    } else {
+        memcpy(bucket->value, value, (*self)->values.el_size);
+    }
+    // _hashmap_value_set(*self, bucket->value, value);
+    return ALLOCATOR_ERROR(OK);
 }
 
 #define slice_from_ptr_len_T(T, _ptr, _len) ((slice_t) {\
@@ -239,17 +259,15 @@ hashmap_set(hashmap_t *self, void *key, void *value) {
 
 AllocatorError
 hashmap_new_cap_in(
-    usize_t key_size, usize_t key_align,
-    HashFn *key_hash, EqFn *key_eq, SetFn *key_set,
-    usize_t value_size, usize_t value_align,
-    SetFn *value_set,
+    TypeId key_tid,
+    TypeId value_tid,
     usize_t cap, Allocator *alloc, hashmap_t *out_map)
 {
     usize_t size_aligns[4][2] = {
         [0] = { sizeof(HashMap), alignof(HashMap) },
         [1] = { cap * sizeof(HashMap_Bucket), alignof(HashMap_Bucket) },
-        [2] = { cap * key_size, key_align },
-        [3] = { cap * value_size, value_align },
+        [2] = { cap * type_prop(key_tid, size), type_prop(key_tid, align) },
+        [3] = { cap * type_prop(value_tid, size), type_prop(value_tid, align) },
     };
     void *ptrs[4];
     TRY(alloc_sequentially_n(4, size_aligns, alloc, &ptrs));
@@ -260,19 +278,21 @@ hashmap_new_cap_in(
         .keys = (slice_t) {
             .ptr = ptrs[2],
             .len = cap,
-            .el_size = key_size,
-            .el_align = key_align,
+            .el_size = type_prop(key_tid, size),
+            .el_align = type_prop(key_tid, align),
         },
-        .key_hash = key_hash,
-        .key_eq = key_eq,
-        .key_set = key_set,
+        .key_hash = type_vt(key_tid, hash),
+        .key_eq = type_vt(key_tid, eq),
+        .key_set = type_vt(key_tid, set),
         .values = (slice_t) {
             .ptr = ptrs[3],
             .len = cap,
-            .el_size = value_size,
-            .el_align = value_align,
+            .el_size = type_prop(value_tid, size),
+            .el_align = type_prop(value_tid, align),
         },
-        .value_set = value_set,
+        .value_set = type_vt(value_tid, set),
+        .key_tid = key_tid,
+        .value_tid = value_tid,
         .count = 0,
         .alloc = *alloc,
     };

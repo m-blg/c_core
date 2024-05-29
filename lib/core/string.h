@@ -18,6 +18,7 @@
 enum_def(UTF8_Error,
     UTF8_ERROR_OK,
     UTF8_ERROR_EMPTY_STRING,
+    UTF8_ERROR_SMALL_TARGET,
     UTF8_ERROR_INCOMPLETE_RUNE,
     UTF8_ERROR_INVALID_RUNE,
 )
@@ -90,6 +91,9 @@ string_init(String *self, usize_t byte_cap, Allocator *allocator);
 INLINE
 void 
 string_reset(String *self);
+INLINE
+uchar_t *
+string_end(String *self);
 
 AllocatorError
 string_new_cap_in(usize_t byte_cap, Allocator *a, String *out_self);
@@ -101,8 +105,36 @@ string_prepend_str(String *self, str_t str);
 AllocatorError
 string_reserve_cap(String *self, usize_t reserve_cap);
 
+#define CORE_DECL_ONLY
+#include "core/io.h"
+#undef CORE_DECL_ONLY
+
+IOError
+string_sw_write(String *self, usize_t data_size, u8_t data[data_size]);
+IOError
+string_sw_flush(void *self);
+
+#define string_sw(self) ((StreamWriter) { \
+    ._vtable = (StreamWriter_VTable) { \
+        .write = (StreamWriter_WriteFn *)string_sw_write, \
+        .flush = (StreamWriter_FlushFn *)string_sw_flush, \
+    }, \
+    .data = (void *)self, \
+}) \
+
+#define sprint_fmt(s, fmt_str, args...) { \
+    auto fmt = string_formatter_default(&string_sw(s)); \
+    ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str, ##args)); \
+    ASSERT_OK(string_formatter_done(&fmt)); \
+}
+
+
 UTF8_Error
 str_next_rune(str_t self, rune_t *out_rune, str_t *out_self);
+
+/// @param[in, out] out_str should be preinit, len 4 guaranties success
+UTF8_Error
+str_encode_next_rune(str_t self, rune_t rune, str_t *out_self);
 
 /// @brief return the length of the string in runes
 /// @note linear complexity
@@ -127,6 +159,54 @@ str_dbg_fmt(const str_t *self, StringFormatter *fmt, void *);
 // fmt_proc_decl(str, str_t, self, fmt)
 FmtError
 str_fmt(const str_t *self, StringFormatter *fmt, void *);
+
+
+u32_t
+str_p_hash(str_t *self);
+bool
+str_p_eq(str_t *str1, str_t *str2);
+bool
+str_eq(str_t str1, str_t str2);
+void
+str_p_set(str_t *l, str_t *r);
+
+#define str_t_eq str_p_eq
+#define str_t_set str_p_set
+#define str_t_hash str_p_hash
+#define str_t_dbg_fmt str_dbg_fmt
+#define str_t_fmt str_fmt
+
+u32_t
+str_p_hash(str_t *self) {
+    str_t _self = *self;
+    u32_t hash = 2166136261u;
+    for_in_range(i, (usize_t)0, str_len(_self)) {
+        hash ^= (u8_t)_self.ptr[i];
+        hash *= 16777619;
+    }
+    return hash;
+}
+
+
+bool
+str_p_eq(str_t *str1, str_t *str2) {
+    return str_eq(*str1, *str2);
+}
+
+void
+str_p_set(str_t *l, str_t *r) {
+    *l = *r;
+}
+
+AllocatorError
+string_append_rune(String *self, rune_t r);
+
+INLINE
+UTF8_Error
+str_advance_rune_shift(str_t *self, u8_t *byte_shift);
+INLINE
+str_t
+str_from_begin_end(str_t b, str_t e);
 
 #endif // CORE_STRING_H 
 
@@ -160,7 +240,7 @@ str_rune_len(str_t self, usize_t *out_len) {
 }
 
 UTF8_Error
-str_next_rune(str_t self, rune_t *out_rune, str_t *out_self) {
+str_next_rune(str_t self, rune_t *out_rune, str_t NLB(*)out_self) {
     if (str_len(self) < 1) {
         return UTF8_ERROR(EMPTY_STRING);
     }
@@ -193,17 +273,94 @@ str_next_rune(str_t self, rune_t *out_rune, str_t *out_self) {
         return UTF8_ERROR(INVALID_RUNE);
     }
 
-    *out_self = str_from_ptr_len(self.ptr + d, str_len(self) - d);
+    if (out_self != nullptr) {
+        *out_self = str_from_ptr_len(self.ptr + d, str_len(self) - d);
+    }
+    return UTF8_ERROR(OK);
+}
+
+INLINE
+UTF8_Error
+str_advance_rune_shift(str_t *self, u8_t *byte_shift) {
+    str_t next;
+    rune_t r;
+    TRY(str_next_rune(*self, &r, &next));
+    *byte_shift = next.byte_len - self->byte_len;
+    *self = next;
+
+    return UTF8_ERROR(OK);
+}
+
+/// e - substring of b
+INLINE
+str_t
+str_from_begin_end(str_t b, str_t e) {
+    ASSERT(b.ptr <= e.ptr);
+    return (str_t) {
+        .ptr = b.ptr,
+        .byte_len = b.byte_len - e.byte_len,
+    };
+}
+
+
+/// @param[in, out] out_str should be preinit, len 4 guaranties success
+UTF8_Error
+str_encode_next_rune(str_t self, rune_t rune, str_t *out_self) {
+    auto ptr = (CharUTF8 *)self.ptr;
+
+    u8_t d = 0;
+    if (rune < 0x80u) {
+        if (str_len(self) < 1) {
+            return UTF8_ERROR(SMALL_TARGET);
+        } 
+        d = 1;
+
+        ptr->r1.c1 = rune & 0x7fu;
+    } else if (rune < 0x0800u) {
+        if (str_len(self) < 2) {
+            return UTF8_ERROR(SMALL_TARGET);
+        } 
+        d = 2;
+
+        ptr->r2.c1 = 0xc0u | ((rune & 0x7c0u) >> 6);
+        ptr->r2.c2 = 0x80u | (rune & 0x3fu);
+    } else if (rune < 0x10000u) {
+        if (str_len(self) < 3) {
+            return UTF8_ERROR(SMALL_TARGET);
+        } 
+        d = 3;
+
+        ptr->r3.c1 = 0xe0u | ((rune & 0xf000u) >> 12);
+        ptr->r3.c2 = 0x80u | ((rune & 0xfc0u) >> 6);
+        ptr->r3.c3 = 0x80u | (rune & 0x3fu);
+    } else if (rune < 0x110000u) {
+        if (str_len(self) < 4) {
+            return UTF8_ERROR(SMALL_TARGET);
+        } 
+        d = 4;
+
+        ptr->r4.c1 = 0xf0u | ((rune & 0x1c0000u) >> 18);
+        ptr->r4.c2 = 0x80u | ((rune & 0x3f000u) >> 12);
+        ptr->r4.c3 = 0x80u | ((rune & 0xfc0u) >> 6);
+        ptr->r4.c4 = 0x80u | (rune & 0x3fu);
+    } else {
+        return UTF8_ERROR(INVALID_RUNE);
+    }
+
+    if (out_self != nullptr) {
+        *out_self = str_from_ptr_len(self.ptr + d, str_len(self) - d);
+    }
     return UTF8_ERROR(OK);
 }
 
 AllocatorError
 runes_to_string(slice_T(rune_t) runes[non_null], String *out_string) {
+    unimplemented();
     String s;
     TRY(string_new_cap_in(sizeof(CharUTF8) * slice_len(runes), &g_ctx.global_alloc, &s));
-    for_in_range(i, 0, slice_len(runes), {
+    for_in_range(i, 0, slice_len(runes)) {
         // string_push();
-    })
+    }
 
     return ALLOCATOR_ERROR(OK);
 }
@@ -235,11 +392,11 @@ str_eq(str_t str1, str_t str2) {
         return false;
     }
 
-    for_in_range(i, 0, str_len(str1), {
+    for_in_range(i, 0, str_len(str1)) {
         if (*str_get_byte(str1, i) != *str_get_byte(str2, i)) {
             return false;
         }
-    })
+    }
 
     return true;
 }
@@ -302,6 +459,12 @@ str_is_prefix(str_t prefix, str_t str) {
 //     _ctx.string_allocator.alloc((type_size), (count), (out_ptr))
 
 // #define _STRING_FREE(ptr) _ctx.string_allocator.free((ptr))
+
+INLINE
+uchar_t *
+string_end(String *self) {
+    return self->ptr + self->byte_len;
+}
 
 /**
  *
@@ -372,6 +535,22 @@ string_prepend_str(String *self, str_t str) {
     self->byte_len += str.byte_len;
     return ALLOCATOR_ERROR(OK);
 }
+
+#define RUNE_ENCODED_MAX_SIZE 4
+
+AllocatorError
+string_append_rune(String *self, rune_t rune) {
+    if (string_rest_cap(self) < RUNE_ENCODED_MAX_SIZE) {
+        TRY(string_reserve_cap(self, MAX(self->byte_cap * 2, self->byte_cap + RUNE_ENCODED_MAX_SIZE)));
+    }
+
+    str_t s = str_from_ptr_len(self->ptr + self->byte_len, self->byte_cap - self->byte_len);
+    ASSERT_OK(str_encode_next_rune(s, rune, &s));
+    self->byte_len = self->byte_cap - s.byte_len;
+    return ALLOCATOR_ERROR(OK);
+}
+
+
 AllocatorError
 string_reserve_cap(String *self, usize_t reserve_cap) {
     if (string_rest_cap(self) < reserve_cap) {
@@ -463,9 +642,6 @@ string_join(dbuff_t<str> str_list, str_t *out) {
 
 
 
-
-
-
 AllocatorError                                                                                                               
 str_copy_in(str_t self, Allocator *a, str_t *out) {
     TRY(allocator_alloc(a, self.byte_len, sizeof(char), (void**)&out->ptr));
@@ -504,7 +680,7 @@ string_new_cap_in(usize_t byte_cap, Allocator *alloc, String *out_self) {
     return ALLOCATOR_ERROR(OK);
 }
 AllocatorError
-string_from_in(str_t s, Allocator *alloc, String *out_self) {
+string_from_str_in(str_t s, Allocator *alloc, String *out_self) {
     void *ptr;
     TRY(allocator_alloc(alloc, s.byte_len, alignof(uchar_t), &ptr));
 
@@ -536,6 +712,17 @@ str_dbg_fmt(const str_t *self, StringFormatter *fmt, void *_) {
     TRY(string_formatter_write(fmt, S("\"")));
     return FMT_ERROR(OK);
 }
+
+IOError
+string_sw_write(String *self, usize_t data_size, u8_t data[data_size]) {
+    if (IS_ERR(string_append_str(self, (str_t) {.ptr = data, .byte_len = data_size}))) {
+        return IO_ERROR(WRITE);
+    }
+
+    return IO_ERROR(OK);
+}
+IOError
+string_sw_flush(void *self) { return IO_ERROR(OK); }
 
 #endif // DBG_PRINT
 

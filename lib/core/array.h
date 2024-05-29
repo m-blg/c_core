@@ -23,24 +23,19 @@
 #define CORE_ARRAY_SLICE_H
 
 #include "core/core.h"
+#include "core/type.h"
 
-
-// "core/fmt.h"
-enum_decl(FmtError);
-struct_decl(StringFormatter);
-typedef FmtError (FmtFn)(void *, StringFormatter *, void *);
-//
+#define CORE_DECL_ONLY
+#include "core/fmt/fmt.h"
+#undef CORE_DECL_ONLY
 
 struct_def(SliceVES, { 
     void *ptr;             
-    usize_t el_size;
-    usize_t el_align;
     usize_t len;        
 
-#ifdef CONTAINER_FMT
-    FmtFn *el_fmt;
-    FmtFn *el_dbg_fmt;
-#endif
+    TypeId el_tid;
+    usize_t el_size;
+    usize_t el_align;
 })
 
 typedef SliceVES slice_t;
@@ -195,16 +190,16 @@ FmtError
 slice_dbg_fmt(slice_t *self, StringFormatter *fmt, void *_) {
     auto fo = (Formattable) {
         ._vtable = (Formattable_VTable) {
-            .fmt = self->el_dbg_fmt,
+            .fmt = type_vt(self->el_tid, dbg_fmt),
         },
     };
     TRY(string_formatter_write(fmt, S("[")));
-    for_in_range(i, 0, self->len-1, {
+    for_in_range(i, 0, self->len-1) {
         // TODO figure out a way to dispatch on type here (static or dynamic)
         fo.data = slice_get(self, i);
         TRY(formattable_fmt(&fo, fmt));
         TRY(string_formatter_write(fmt, S(", ")));
-    })
+    }
     fo.data = slice_get_i(self, -1);
     TRY(formattable_fmt(&fo, fmt));
     TRY(string_formatter_write(fmt, S("]")));
@@ -250,11 +245,13 @@ typedef DArrVES * darr_t;
 #define DArrVES_T(T) DArrVES
 #define darr_T(T) darr_t
 
+#define darr_data_ptr(self) ((self)->data.ptr)
+#define darr_data(self) ((self)->data)
 #define darr_cap(self) ((self)->data.len)
 #define darr_len(self) ((self)->len)
 // #define darr_get_T(T, self, index) slice_get_T(T, &(self)->data, index)
 // #define darr_get_iT(T, self, index) slice_get_iT(T, &(self)->data, index)
-#define darr_rest(self) (darr_cap(self) - (self)->len)
+#define darr_rest_cap(self) (darr_cap(self) - (self)->len)
 
 #define DARR_DEFAULT_INIT_CAP 16
 
@@ -297,6 +294,25 @@ darr_get_i(darr_t self, isize_t index) {
 //     unimplemented();
 // }
 
+INLINE
+slice_t
+darr_slice_full(darr_t self) {
+    return (slice_t) {
+        .ptr = self->data.ptr,
+        .len = self->len,
+        .el_align = self->data.el_align,
+        .el_size = self->data.el_size,
+        .el_tid = self->data.el_tid,
+    };
+}
+
+
+#define darr_t_fmt nullptr
+#define darr_t_dbg_fmt nullptr
+#define darr_t_eq nullptr
+#define darr_t_set nullptr
+#define darr_t_hash nullptr
+
 #undef CORE_ARRAY_H
 #endif // CORE_ARRAY_DARR_H
 
@@ -317,7 +333,7 @@ darr_new_cap_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator *allo
     // TRY(allocator_alloc(allocator, size_alignment + cap * el_size   , alignof(DArrVES), (void **)out_self));
 
     void *data;
-    TRY(alloc_two(sizeof(DArrVES), alignof(DArrVES), 
+    TRY(alloc_sequentially_two(sizeof(DArrVES), alignof(DArrVES), 
                   cap * el_size, alignment,
                   allocator,
                   (void **)out_self, (void **)&data));
@@ -352,7 +368,7 @@ AllocatorError
 darr_push(darr_t *self, void *item) {
     // arrow op double deref used (Not working btw)
     auto _self = *self;
-    if (darr_rest(_self) == 0) {
+    if (darr_rest_cap(_self) == 0) {
         // reallocate
         usize_t new_cap = MAX(darr_cap(_self) * 2, DARR_DEFAULT_INIT_CAP);
         darr_t new_self;
@@ -374,6 +390,40 @@ darr_push(darr_t *self, void *item) {
     // auto dst = (u8_t *)_self->data.ptr + _self->len * _self->data.el_size;
     memcpy(slice_get_unchecked(&_self->data, _self->len), item, _self->data.el_size);
     _self->len += 1;
+    return ALLOCATOR_ERROR(OK);
+}
+
+AllocatorError
+darr_reserve_cap(darr_t *self, usize_t reserve_cap) {
+    if (darr_rest_cap(*self) < reserve_cap) {
+        TRY(allocator_resize(&(*self)->allocator, 
+            MAX(darr_cap(*self) * 2, darr_cap(*self) + reserve_cap), 
+            alignof(uchar_t), (void **)&darr_data_ptr(*self)));
+    }
+    return ALLOCATOR_ERROR(OK);
+}
+
+// #define darr_push_rval(self, item) {
+    
+// }
+
+AllocatorError
+darr_from_slice_in(slice_t *slice, Allocator *alloc, darr_t *self);
+
+
+AllocatorError
+darr_copy_data_in(darr_t self, Allocator *alloc, darr_t *new_self) {
+    TRY(darr_from_slice_in(&darr_data(self), alloc, new_self));
+    (*new_self)->len = self->len;
+    return ALLOCATOR_ERROR(OK);
+}
+
+AllocatorError
+darr_reallocate_in(darr_t *self, Allocator *alloc) {
+    darr_t new_self;
+    TRY(darr_copy_data_in(*self, alloc, &new_self));
+    darr_free(self);
+    *self = new_self;
     return ALLOCATOR_ERROR(OK);
 }
 
@@ -401,9 +451,9 @@ darr_i32_dbg_print(darr_t self) {
         printf(PAD "len: %ld" "\n", self->len);
         printf(PAD "allocator: %ld" "\n", (uintptr_t)self->allocator.data);
         printf(PAD "data: [");
-        for_in_range(i, 0, darr_len(self) - 1, {
+        for_in_range(i, 0, darr_len(self) - 1) {
             printf("%d, ", *darr_get_T(i32_t, self, i));
-        })
+        }
         printf("%d]\n", *darr_get_iT(i32_t, self, -1));
     printf("}" "\n");
     #undef PAD
@@ -449,7 +499,7 @@ ring_buff_last(ring_buff_t self) {
 AllocatorError                                                                                                               
 ring_buff_new_in(usize_t el_size, usize_t alignment, usize_t cap, Allocator *alloc, ring_buff_t *out_self) {                             
     void *data;
-    TRY(alloc_two(sizeof(RingBuffVES), alignof(RingBuffVES), 
+    TRY(alloc_sequentially_two(sizeof(RingBuffVES), alignof(RingBuffVES), 
                   cap * el_size, alignment,
                   alloc,
                   (void **)out_self, (void **)&data));

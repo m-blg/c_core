@@ -16,6 +16,10 @@
 #include "core/array.h"
 #define CORE_STRING_IMPL
 #include "core/string.h"
+#define CORE_LIST_IMPL
+#include "core/list.h"
+#define CORE_ARENA_IMPL
+#include "core/arena.h"
 
 #define CORE_CORE_IMPL
 #endif // CORE_IMPL
@@ -71,6 +75,14 @@ struct name fields;               \
 typedef enum name name;         \
 enum name {__VA_ARGS__};               \
 
+/// by default all pointer parameters assumed to be non-null
+/// otherwise you should mark a pointer as NLB()
+/// ex. int NLB(*)value;
+#define NLB(p) p
+/// output-nullable
+#define ONLB(p) NLB(p)
+/// input-nullable
+#define INLB(p) NLB(p)
 #define non_null static 1
 
 enum_def(AllocatorError,
@@ -199,6 +211,12 @@ panic();
     }                                        \
 }
 
+#ifndef NDEBUG
+#define DBG_ASSERT(x) ASSERT(x)
+#else
+#define DBG_ASSERT(x) 
+#endif
+
 /// @param x: Sized
 #define NULLIFY(x) memset(&(x), 0, sizeof(x))
 
@@ -227,8 +245,8 @@ struct Allocator {
 };
 
 // opaque type instead of Allocator *
-typedef AllocatorError (AllocatorAllocAlignFn)(void *, usize_t, usize_t, void **);
-typedef AllocatorError (AllocatorResizeAlignFn)(void *, usize_t, usize_t, void **);
+typedef AllocatorError (AllocatorAllocFn)(void *, usize_t, usize_t, void **);
+typedef AllocatorError (AllocatorResizeFn)(void *, usize_t, usize_t, void **);
 typedef void (AllocatorFreeFn)(void *, void **);
 
 AllocatorError
@@ -256,7 +274,7 @@ allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_p
 /// size1, size2 - adhere to sizeof semantics
 /// align1, align2 - adhere to alignof semantics
 AllocatorError 
-alloc_two(usize_t size1, usize_t align1, 
+alloc_sequentially_two(usize_t size1, usize_t align1, 
           usize_t size2, usize_t align2,
           Allocator allocator[non_null], 
           void **out1, void **out2);
@@ -325,7 +343,7 @@ void *(name)(void *arg) {                        \
 
 typedef bool (*PredicateFn)(void*);
 
-#define for_in_range(i, from, to, body) for (auto i = (from); i < (to); i++) {body}
+#define for_in_range(i, from, to) for (auto i = (from); i < (to); i++)
 
 
 
@@ -333,7 +351,15 @@ typedef bool (*PredicateFn)(void*);
 
 #define STRINGIFY(x) #x
 
-// #include "runtime.h"
+
+#define CORE_DECL_ONLY
+#include "core/fmt/fmt.h"
+#undef CORE_DECL_ONLY
+
+typedef u64_t (HashFn)(void *key);
+typedef bool (EqFn)(void *val1, void *val2);
+typedef void (SetFn)(void *lval, void *rval);
+
 
 #endif // CORE_CORE_H
 
@@ -354,7 +380,7 @@ print_stack_trace() {} // TODO(mbgl)
 [[noreturn]]
 void 
 panic() { 
-    GDB_INT;
+    // GDB_INT;
     print_stack_trace(); 
     exit(1); 
 }
@@ -379,24 +405,62 @@ allocator_free(Allocator* self, void **ptr) {
 
 AllocatorError
 allocator_alloc_z(Allocator* self, usize_t size, usize_t alignment, void **out_ptr) {
-    TRY(self->_vtable.alloc(self, size, alignment, out_ptr));
-    memset((void*)*out_ptr, 0, size);
+    TRY(self->_vtable.alloc(self->data, size, alignment, out_ptr));
+    memset(*out_ptr, 0, size);
     return ALLOCATOR_ERROR(OK);
 }
 
 
+/// @param[out] out_ptrs
+AllocatorError 
+alloc_sequentially_n(usize_t n, usize_t size_aligns[n][2],
+          Allocator allocator[non_null], void *(*out_ptrs)[n]) 
+{
+    if (n < 2) {
+        if (n < 1) {
+            return ALLOCATOR_ERROR(OK);
+        }
 
+        // n == 1
+        TRY(allocator_alloc_z(allocator, size_aligns[0][0], size_aligns[0][1], &(*out_ptrs)[0]));
+        return ALLOCATOR_ERROR(OK);
+    }
+
+    void *p = nullptr;
+    usize_t size = size_aligns[0][0];
+    for_in_range(i, 0, n-1) {
+        usize_t size2 = size_aligns[i+1][0],
+                align1 = size_aligns[i][1],
+                align2 = size_aligns[i+1][1];
+
+        usize_t pad = (align2 > align1) ? align2 - align1 : 0;
+        size += pad + size2;
+    }
+    TRY(allocator_alloc_z(allocator, size, size_aligns[0][1], &p));
+
+    for_in_range(i, 0, n-1) {
+        usize_t size1 = size_aligns[i][0],
+                align2 = size_aligns[i+1][1];
+        (*out_ptrs)[i] = p;
+        p = align_forward(ptr_shift(p, size1), align2);
+    }
+    (*out_ptrs)[n-1] = p;
+    return ALLOCATOR_ERROR(OK);
+}
+
+/// assumes size vars are adhere to:
+///     if p1 - aligned(align1), then p1 + size1 - aligned(align1)
 /// size1, size2 - adhere to sizeof semantics
 /// align1, align2 - adhere to alignof semantics
 AllocatorError 
-alloc_two(usize_t size1, usize_t align1, 
+alloc_sequentially_two(usize_t size1, usize_t align1, 
           usize_t size2, usize_t align2,
           Allocator allocator[non_null], 
           void **out1, void **out2) 
 {
     void *p = nullptr;
     usize_t pad = (align2 > align1) ? align2 - align1 : 0;
-    TRY(allocator_alloc(allocator, size1 + pad + size2, align1, &p));
+    TRY(allocator_alloc_z(allocator, size1 + pad + size2, align1, &p));
     *out1 = p;
     *out2 = align_forward(ptr_shift(p, size1), align2);
     return ALLOCATOR_ERROR(OK);

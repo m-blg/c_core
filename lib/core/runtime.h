@@ -7,6 +7,8 @@
 
 #include "core/core.h"
 #include "core/io.h"
+#include "core/fmt/fmt.h"
+#include "core/arena.h"
 
 Allocator g_c_allocator;
 
@@ -15,6 +17,11 @@ OutputFileStream g_stdout_ofs;
 
 __thread struct {
     Allocator global_alloc;
+
+    Arena imm_str_arena;
+    Allocator imm_str_alloc;
+    slice_T(u8_t) dump_buffer;
+
     // TODO
     void (*raise)(Error);
 
@@ -25,6 +32,53 @@ void
 ctx_init_default();
 void
 io_init(Allocator alloc[non_null]);
+
+
+#define ctx_global_alloc (&g_ctx.global_alloc)
+
+#include "core/type.h"
+
+
+#define PRIM_COMMON_IMPL(PREF, T) \
+u64_t \
+PREF##_hash(T *val) { \
+    return (u64_t)val; \
+} \
+bool \
+PREF##_eq(T *l, T *r) { \
+    return *l == *r; \
+} \
+void \
+PREF##_set(T *l, T *r) { \
+    *l = *r; \
+}
+
+PRIM_COMMON_IMPL(int, int)
+PRIM_COMMON_IMPL(usize_t, usize_t)
+
+
+TypeInfo g_type_info[] = {
+#define TYPE_LIST_ENTRY(T) (TypeInfo) {\
+    .size = sizeof(T),\
+    .align = alignof(T),\
+    .name = S(STRINGIFY(T)),\
+    ._vtable = (TypeInfo_VTable) {\
+        .fmt = (FmtFn *)T##_fmt,\
+        .dbg_fmt = (FmtFn *)T##_dbg_fmt,\
+        .eq = (EqFn *)T##_eq,\
+        .set = (SetFn *)T##_set,\
+        .hash = (HashFn *)T##_hash,\
+    },\
+}\
+
+    TYPE_LIST
+#undef TYPE_LIST_ENTRY
+};
+
+#define type_prop(tid, prop) g_type_info[tid].prop
+#define type_vt(tid, fn) g_type_info[tid]._vtable.fn
+#define type_prop_T(T, prop) g_type_info[typeid_of(T)].prop
+#define type_vt_T(T, fn) g_type_info[typeid_of(T)]._vtable.fn
 
 #endif // CORE_RUNTIME_H
 
@@ -105,9 +159,21 @@ void
 ctx_init_default() {
     g_c_allocator = c_allocator();
     g_ctx.global_alloc = g_c_allocator;
+    ASSERT_OK(arena_init(&g_ctx.imm_str_arena, 4096, &g_ctx.global_alloc));
+    g_ctx.imm_str_alloc = arena_allocator(&g_ctx.imm_str_arena);
+
+    ASSERT_OK(slice_new_in_T(u8_t, 4096, &g_ctx.global_alloc, &g_ctx.dump_buffer));
+
     g_ctx.raise = default_raise;
 
     io_init(&g_ctx.global_alloc);
     g_ctx.stdout_sw = output_file_stream_stream_writer(&g_stdout_ofs);
 }
+
+void
+ctx_deinit() {
+    slice_free(&g_ctx.dump_buffer, &g_ctx.global_alloc);
+    arena_deinit(&g_ctx.imm_str_arena);
+}
+
 #endif // CORE_RUNTIME_IMPL

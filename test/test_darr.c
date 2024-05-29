@@ -16,9 +16,9 @@ Test(slice, basic) {
     *slice_get_T(int, &sl, 1) = 7;
     *slice_get_T(int, &sl, 2) = 9;
     slice_copy_data(&sl, &sl2);
-    for_in_range(i, 0, slice_len(&sl), {
+    for_in_range(i, 0, slice_len(&sl)) {
         printf("%d %d\n", *slice_get_T(int, &sl, i), *slice_get_iT(int, &sl2, -i - 1));
-    })
+    }
     slice_free(&sl, &g_ctx.global_alloc);
     slice_free(&sl2, &g_ctx.global_alloc);
 }
@@ -38,8 +38,8 @@ int main()
     darr_push(&arr, &(i32_t){7});
     darr_push(&arr, &(i32_t){9});
     darr_i32_dbg_print(arr);
-    for_in_range(i, 0, darr_len(arr), {
+    for_in_range(i, 0, darr_len(arr)) {
         printf("%d %d\n", *darr_get_T(i32_t, arr, i), *darr_get_iT(i32_t, arr, -i - 1));
-    })
+    }
     darr_free(&arr);
 }

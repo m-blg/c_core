@@ -10,13 +10,20 @@
 ///
 /// #endif // CORE_ARRAY_SLICE_IMPL
 #define CORE_IMPL_GUARD(SECTION) \
-    defined(SECTION##_IMPL) &&   \
-    !defined(SECTION##_I)      \
+    !defined(CORE_DECL_ONLY) && \
+    defined(SECTION##_IMPL) && \
+    !defined(SECTION##_I) \
 
 #define CORE_IS_GUARD(SECTION, SUBSECTION) \
+    !defined(CORE_DECL_ONLY) && \
     defined(SECTION##_##SUBSECTION##_IMPL) &&   \
     !defined(SECTION##_##SUBSECTION##_I) &&   \
     !defined(SECTION##_H)                   \
+
+
+#define CORE_HEADER_GUARD(SECTION) \
+    !defined(CORE_DECL_ONLY) && \
+    !defined(SECTION##_H) \
 
 
 /// @example
@@ -31,7 +38,8 @@
 /// #undef CORE_ARRAY_H
 /// #endif // CORE_ARRAY_SLICE_H
 #define CORE_HS_GUARD(SECTION, SUBSECTION) \
-    !defined(SECTION##_H) &&                \
+    !defined(CORE_DECL_ONLY) && \
+    !defined(SECTION##_H) && \
     !defined(SECTION##_##SUBSECTION##_H)     
 
 
