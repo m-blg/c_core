@@ -13,6 +13,7 @@
 Allocator g_c_allocator;
 
 OutputFileStream g_stdout_ofs;
+OutputFileStream g_stderr_ofs;
 #define STDOUT_STREAM_DEFAULT_BUFFER_SIZE 1024
 
 __thread struct {
@@ -26,6 +27,7 @@ __thread struct {
     void (*raise)(Error);
 
     StreamWriter stdout_sw;
+    StreamWriter stderr_sw;
 } g_ctx;
 
 void
@@ -153,6 +155,11 @@ io_init(Allocator alloc[non_null]) {
         STDOUT_STREAM_DEFAULT_BUFFER_SIZE, 
         alloc, 
         &g_stdout_ofs);
+    output_file_stream_new_in(
+        stderr, 
+        STDOUT_STREAM_DEFAULT_BUFFER_SIZE, 
+        alloc, 
+        &g_stderr_ofs);
 }
 
 void
@@ -168,6 +175,7 @@ ctx_init_default() {
 
     io_init(&g_ctx.global_alloc);
     g_ctx.stdout_sw = output_file_stream_stream_writer(&g_stdout_ofs);
+    g_ctx.stderr_sw = output_file_stream_stream_writer(&g_stderr_ofs);
 }
 
 void

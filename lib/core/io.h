@@ -116,6 +116,12 @@ output_string_stream_flush(String self[non_null]);
 
 // StreamWriter
 
+AllocatorError
+file_sw(FILE *self, OutputFileStream *out_ofs) {
+    TRY(output_file_stream_new_in(self, 4096, ctx_global_alloc, out_ofs));
+    return ALLOCATOR_ERROR(OK);
+}
+
 INLINE
 IOError
 stream_writer_write(StreamWriter self[non_null], usize_t data_size, uint8_t data[data_size]) {

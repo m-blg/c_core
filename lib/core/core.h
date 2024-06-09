@@ -20,6 +20,8 @@
 #include "core/list.h"
 #define CORE_ARENA_IMPL
 #include "core/arena.h"
+#define CORE_HASHMAP_IMPL
+#include "core/hashmap.h"
 
 #define CORE_CORE_IMPL
 #endif // CORE_IMPL
@@ -170,45 +172,52 @@ panic();
         return e;           \
     }                       \
 
-// #define IS_OK(e) (*(int *)&(e) == 0)
+#define IS_OK(e) ({ \
+    auto _r = (e); \
+    *(int *)&(_r) == 0; \
+    })
+#define IS_ERR(e) ({ \
+    auto _r = (e); \
+    *(int *)&(_r) != 0; \
+    })
 // #define IS_ERR(e) (*(int *)&(e) != 0)
-#define IS_OK(e) ((e) == 0)
-#define IS_ERR(e) ((e) != 0)
+// #define IS_OK(e) ((e) == 0)
+// #define IS_ERR(e) ((e) != 0)
 
-#define TRY(expr) {                         \
-    auto _e_ = (expr);                        \
-    if (IS_ERR(_e_)) {              \
-        return _e_;                           \
-    }                                       \
-  }                                         \
+#define TRY(expr) { \
+    auto _e_ = (expr); \
+    if (IS_ERR(_e_)) { \
+        return _e_; \
+    } \
+  }
 
-#define OR_RAISE(expr) {                         \
-    auto _e_ = (expr);                        \
-    if (IS_ERR(_e_)) {              \
-        return g_ctx.raise(error_cast(_e_));  \
-    }                                       \
-  }                                         \
+#define OR_RAISE(expr) { \
+    auto _e_ = (expr); \
+    if (IS_ERR(_e_)) { \
+        return g_ctx.raise(error_cast(_e_)); \
+    } \
+  }
 
 
-#define ASSERT(expr)                        \
-    if (!(expr)) {                           \
-        fprintf(stderr, "ASSERT at %s:%d:\n", __FILE__, __LINE__);  \
-        panic();                             \
-    }                                        \
+#define ASSERT(expr) \
+    if (!(expr)) { \
+        fprintf(stderr, "ASSERT at %s:%d:\n", __FILE__, __LINE__); \
+        panic(); \
+    } 
 
-#define ASSERTM(expr, msg) {                                \
-    if (!(expr)) {                                          \
-        fprintf(stderr, "ASSERTM: %*s\nat %s:%d:\n", (int)(sizeof(msg)-1), msg, __FILE__, __LINE__);  \
-        panic();                                            \
-    }                                                       \
+#define ASSERTM(expr, msg) { \
+    if (!(expr)) { \
+        fprintf(stderr, "ASSERTM: %*s\nat %s:%d:\n", (int)(sizeof(msg)-1), msg, __FILE__, __LINE__); \
+        panic(); \
+    } \
 }
 
-#define ASSERT_OK(expr) {                     \
-    auto _e_ = (expr);                         \
-    if (IS_ERR(_e_)) {               \
-        fprintf(stderr, "ASSERT_OK at %s:%d:\n", __FILE__, __LINE__);  \
-        panic();                             \
-    }                                        \
+#define ASSERT_OK(expr) { \
+    auto _e_ = (expr); \
+    if (IS_ERR(_e_)) { \
+        fprintf(stderr, "ASSERT_OK at %s:%d:\n", __FILE__, __LINE__); \
+        panic(); \
+    } \
 }
 
 #ifndef NDEBUG
@@ -278,6 +287,11 @@ alloc_sequentially_two(usize_t size1, usize_t align1,
           usize_t size2, usize_t align2,
           Allocator allocator[non_null], 
           void **out1, void **out2);
+
+/// @param[out] out_ptrs
+AllocatorError 
+alloc_sequentially_n(usize_t n, usize_t size_aligns[n][2],
+          Allocator allocator[non_null], void *(*out_ptrs)[n]);
 
 /// @brief V
 /// @param value 

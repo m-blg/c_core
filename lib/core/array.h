@@ -393,6 +393,12 @@ darr_push(darr_t *self, void *item) {
     return ALLOCATOR_ERROR(OK);
 }
 
+void
+darr_pop(darr_t *self) {
+    ASSERT(darr_len(*self) > 0);
+    (*self)->len -= 1;
+}
+
 AllocatorError
 darr_reserve_cap(darr_t *self, usize_t reserve_cap) {
     if (darr_rest_cap(*self) < reserve_cap) {
@@ -434,6 +440,32 @@ darr_from_slice_in(slice_t *slice, Allocator *alloc, darr_t *self) {
     memcpy((*self)->data.ptr, slice->ptr, slice->len * slice->el_size);
     (*self)->len = slice_len(slice);
     
+    return ALLOCATOR_ERROR(OK);
+}
+
+INLINE
+void *
+darr_end(darr_t self) {
+    return (u8_t *)self->data.ptr + darr_len(self) * self->data.el_size;
+}
+#define darr_end_T(T, self) ((T *)darr_end(self))
+
+#define darr_rest_slice(self) \
+    ((slice_t) { \
+        .el_size = (self)->data.el_size, \
+        .el_align = (self)->data.el_align, \
+        .el_tid = (self)->data.el_tid, \
+        .ptr = darr_end(self), \
+        .len = darr_rest_cap(self), \
+    }) \
+
+AllocatorError
+darr_append_slice(darr_t *self, slice_t slice) {
+    ASSERT((*self)->data.el_size == slice.el_size && (*self)->data.el_align == slice.el_align);
+    if (darr_rest_cap(*self) < slice_len(&slice)) {
+        TRY(darr_reserve_cap(self, slice_len(&slice)));
+    }
+    slice_copy_data(&slice, &darr_rest_slice(*self));
     return ALLOCATOR_ERROR(OK);
 }
 

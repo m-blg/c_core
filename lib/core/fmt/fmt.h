@@ -140,6 +140,18 @@ string_formatter_write_fmt(StringFormatter *fmt, str_t fmt_str, ...);
     ASSERT_OK(stream_writer_flush(&fmt.target)); \
 }                                                                     
 
+#define eprint_fmt(fmt_str, args...) { \
+    auto fmt = string_formatter_default(&g_ctx.stderr_sw); \
+    ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str, ##args)); \
+    ASSERT_OK(stream_writer_flush(&fmt.target)); \
+}                                                                     
+#define eprintln_fmt(fmt_str, args...) { \
+    auto fmt = string_formatter_default(&g_ctx.stderr_sw); \
+    ASSERT_OK(string_formatter_write_fmt(&fmt, fmt_str, ##args)); \
+    ASSERT_OK(string_formatter_write(&fmt, S("\n"))); \
+    ASSERT_OK(stream_writer_flush(&fmt.target)); \
+}                                                                     
+
 
 #undef CORE_FMT_H
 #endif // CORE_FMT_FORMATTER_H

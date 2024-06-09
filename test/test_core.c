@@ -78,7 +78,7 @@ void (*Foo5)(usize_t *);
 
 struct N {};
 typedef struct N2 N2;
-typedef N3; // int
+typedef int N3; // int
 // typedef double N3; // error
 
 Test(core, c_allocator) {
@@ -185,14 +185,52 @@ enum_def(En,
 
 
 
+extern void test_foo();
+
+void test_foo() {
+    println_fmt(S("foo"));
+}
+
+struct_decl(SFoo);
+extern SFoo g_var;
+// SFoo g_var;
+
+void test_bar(SFoo sf);
+
+extern int g_var2;
+/*static*/ int g_var2;
+
+void test_ref() {
+    test_foo();
+}
+
+typedef int Foo2;
+struct A {
+    Foo2 Foo2;
+};
+// Foo2 Foo2; // error
+
+void test_type_name() {
+    struct A a;
+    a.Foo2 = 3;
+    int Foo2 = 4;
+
+    // (a.Foo2 * Foo2);
+    // (Foo2) Foo2;
+}
+
+
 // Test(core, fn) {
 int main() {
+    ctx_init_default();
     TEST_PRINT(core, fn);
     F = test_fn;
     int x = 5;
     for_in_range(i, 0, x-i) {
         printf("%d %d\n", i, x-i);
     }
+
+    test_ref();
 }
 
 

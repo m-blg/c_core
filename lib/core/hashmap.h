@@ -58,6 +58,8 @@ typedef HashMap * hashmap_t;
 
 #define hashmap_new_cap_in_T(KT, VT, cap, alloc, out_map) \
     hashmap_new_cap_in(typeid_of(KT), typeid_of(VT), cap, alloc, out_map)
+
+
 AllocatorError
 hashmap_new_cap_in(
     TypeId key_tid,
@@ -66,6 +68,74 @@ hashmap_new_cap_in(
 void
 hashmap_free(hashmap_t *self);
 
+INLINE
+usize_t
+hashmap_value_size(HashMap *self);
+
+INLINE
+usize_t
+hashmap_key_size(HashMap *self);
+INLINE
+usize_t
+hashmap_bucket_size(HashMap *self);
+INLINE
+usize_t
+hashmap_cap(HashMap *self);
+INLINE
+usize_t
+hashmap_rest_cap(HashMap *self);
+
+HashMap_Bucket NLB(*)
+hashmap_get_bucket(HashMap *self, void *key);
+
+HashMap_Bucket *
+hashmap_get_bucket_by_intern(HashMap *self, void *key_obj);
+
+INLINE
+void NLB(*)
+hashmap_get(HashMap *self, void *key);
+#define hashmap_get_T(T_Val, self, key) ((T_Val *)hashmap_get(self, key))
+
+#define hashmap_interned_key(key) key
+INLINE
+void NLB(*)
+hashmap_get_by_intern(HashMap *self, hashmap_interned_key(void) *key_obj);
+
+AllocatorError
+hashmap_grow(hashmap_t *self, usize_t fit_cap);
+
+#define _hashmap_value_set(self, lval, rval) \
+    (type_vt((self)->value_tid, set)(lval, rval))
+
+AllocatorError
+hashmap_add_key_val(hashmap_t *self, void *key, void *value, HashMap_Bucket *bucket);
+
+AllocatorError
+hashmap_set(hashmap_t *self, void *key, void *value);
+
+#define slice_from_ptr_len_T(T, _ptr, _len) ((slice_t) {\
+    .ptr = (_ptr),\
+    .len = (_len),\
+    .el_size = sizeof(T),\
+    .el_align = alignof(T),\
+})\
+
+
+#define for_in_hashmap_key_val_T(KT, VT, map, key, val, body) \
+for (usize_t __i = 0; __i < hashmap_len(map); __i += 1) { \
+    KT *key = slice_get_T(KT, &map->keys, __i); \
+    VT *val = slice_get_T(VT, &map->keys, __i); \
+    \
+    body \
+}
+
+#endif // CORE_HASHMAP_H
+
+
+
+
+#if CORE_IMPL_GUARD(CORE_HASHMAP)
+#define CORE_HASHMAP_I
 
 INLINE
 usize_t
@@ -136,7 +206,6 @@ hashmap_get_bucket_by_intern(HashMap *self, void *key_obj) {
     return nullptr;
 }
 
-#define hashmap_get_T(T_Val, self, key) ((T_Val *)hashmap_get(self, key))
 
 INLINE
 void NLB(*)
@@ -148,7 +217,6 @@ hashmap_get(HashMap *self, void *key) {
     return bucket->value;
 }
 
-#define hashmap_interned_key(key) key
 
 INLINE
 void NLB(*)
@@ -203,9 +271,6 @@ hashmap_grow(hashmap_t *self, usize_t fit_cap) {
     return ALLOCATOR_ERROR(OK);
 }
 
-#define _hashmap_value_set(self, lval, rval) \
-    (type_vt((self)->value_tid, set)(lval, rval))
-
 AllocatorError
 hashmap_add_key_val(hashmap_t *self, void *key, void *value, HashMap_Bucket *bucket) {
     if ((*self)->count >= hashmap_cap(*self)-1) {
@@ -250,12 +315,6 @@ hashmap_set(hashmap_t *self, void *key, void *value) {
     return ALLOCATOR_ERROR(OK);
 }
 
-#define slice_from_ptr_len_T(T, _ptr, _len) ((slice_t) {\
-    .ptr = (_ptr),\
-    .len = (_len),\
-    .el_size = sizeof(T),\
-    .el_align = alignof(T),\
-})\
 
 AllocatorError
 hashmap_new_cap_in(
@@ -305,4 +364,4 @@ hashmap_free(hashmap_t *self) {
     allocator_free(&alloc, (void **)self);
 }
 
-#endif // CORE_HASHMAP_H
+#endif // CORE_HASHMAP_IMPL
