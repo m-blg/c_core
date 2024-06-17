@@ -658,7 +658,7 @@ str_from_c_str_in(cstr_t s, Allocator *a, str_t *out_self) {
     out_self->byte_len = s_len;
     return ALLOCATOR_ERROR(OK);
 }
-#define str_from_c_str_no_copy(s) (str_t) {.ptr = (auto*)s, .byte_len = strlen(s)}
+#define str_from_c_str_no_copy(s) (str_t) {.ptr = (uchar_t *)s, .byte_len = strlen(s)}
 
 // Error
 // string_copy_in(String self, String *out, Allocator *a) {

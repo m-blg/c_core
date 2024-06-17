@@ -213,10 +213,11 @@ struct A {
 void test_type_name() {
     struct A a;
     a.Foo2 = 3;
-    int Foo2 = 4;
+    // int Foo2 = 3;
+    int x;
 
     // (a.Foo2 * Foo2);
-    // (Foo2) Foo2;
+    (Foo2) + x;
 }
 
 

@@ -16,6 +16,8 @@ OutputFileStream g_stdout_ofs;
 OutputFileStream g_stderr_ofs;
 #define STDOUT_STREAM_DEFAULT_BUFFER_SIZE 1024
 
+#define CTX_DUMP_BUFFER_SIZE 4096
+
 __thread struct {
     Allocator global_alloc;
 
@@ -169,7 +171,7 @@ ctx_init_default() {
     ASSERT_OK(arena_init(&g_ctx.imm_str_arena, 4096, &g_ctx.global_alloc));
     g_ctx.imm_str_alloc = arena_allocator(&g_ctx.imm_str_arena);
 
-    ASSERT_OK(slice_new_in_T(u8_t, 4096, &g_ctx.global_alloc, &g_ctx.dump_buffer));
+    ASSERT_OK(slice_new_in_T(u8_t, CTX_DUMP_BUFFER_SIZE, &g_ctx.global_alloc, &g_ctx.dump_buffer));
 
     g_ctx.raise = default_raise;
 

@@ -124,10 +124,17 @@ hashmap_set(hashmap_t *self, void *key, void *value);
 #define for_in_hashmap_key_val_T(KT, VT, map, key, val, body) \
 for (usize_t __i = 0; __i < hashmap_len(map); __i += 1) { \
     KT *key = slice_get_T(KT, &map->keys, __i); \
-    VT *val = slice_get_T(VT, &map->keys, __i); \
+    VT *val = slice_get_T(VT, &map->values, __i); \
     \
     body \
 }
+
+
+#define hashset_T(T) hashmap_T(T, bool)
+#define hashset_add(set, value) hashmap_set((set), (value), &(bool){true})
+#define hashset_new_cap_in_T(T, cap, alloc, out_self) hashmap_new_cap_in_T(T, bool, (cap), (alloc), (out_self))
+#define hashset_len(set) hashmap_len(set)
+#define hashset_values_raw(set) ((set)->keys)
 
 #endif // CORE_HASHMAP_H
 

@@ -37,12 +37,12 @@ struct_def(OutputFileStream, {
     void *e_cursor;
     FILE *file;
 })
-struct_def(OutputStringStream, {
-    slice_T(u8_t) buffer;
-    void *b_cursor;
-    void *e_cursor;
-    FILE *file;
-})
+// struct_def(OutputStringStream, {
+//     slice_T(u8_t) buffer;
+//     void *b_cursor;
+//     void *e_cursor;
+//     FILE *file;
+// })
 
 #define output_file_stream_reset_cursors(self) ((self)->b_cursor = (self)->e_cursor = (self)->buffer.ptr)
 #define output_file_stream_pending_len(self) ((usize_t)(self)->e_cursor - (usize_t)(self)->b_cursor)
@@ -67,6 +67,8 @@ IOError
 output_string_stream_write(String self[non_null], usize_t data_size, u8_t data[data_size]);
 IOError
 output_string_stream_flush(String self[non_null]);
+StreamWriter
+string_stream_writer(String self[non_null]);
 
 #define KNRM  "\x1B[0m"
 #define KRED  "\x1B[31m"

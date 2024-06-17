@@ -102,6 +102,8 @@ slice_free(slice_t *self, Allocator *alloc);
 void
 slice_copy_data(slice_t *self, slice_t *out_slice);
 
+slice_t
+slice_subslice(slice_t *self, usize_t from, usize_t to);
 
 #ifdef DBG_PRINT
 FmtError
@@ -163,6 +165,17 @@ void
 slice_copy_data(slice_t *self, slice_t *out_slice) {
     ASSERT(out_slice->len >= self->len);
     memcpy(out_slice->ptr, self->ptr, slice_size(self));
+}
+
+slice_t
+slice_subslice(slice_t *self, usize_t from, usize_t to) {
+    return (slice_t) {
+        .ptr = ptr_shift(self->ptr, from * self->el_size),
+        .len = to - from,
+        .el_align = self->el_align,
+        .el_size = self->el_size,
+        .el_tid = self->el_tid,
+    };
 }
 
 // void
@@ -466,6 +479,7 @@ darr_append_slice(darr_t *self, slice_t slice) {
         TRY(darr_reserve_cap(self, slice_len(&slice)));
     }
     slice_copy_data(&slice, &darr_rest_slice(*self));
+    (*self)->len += slice_len(&slice);
     return ALLOCATOR_ERROR(OK);
 }
 

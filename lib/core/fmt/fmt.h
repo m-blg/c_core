@@ -42,7 +42,8 @@ FmtError
 string_formatter_write(StringFormatter *fmt, const str_t s);
 FmtError
 string_formatter_writeln(StringFormatter *fmt, const str_t s);
-
+FmtError
+string_formatter_write_fmt(StringFormatter *fmt, str_t fmt_str, ...);
 
 FmtError 
 formattable_fmt(Formattable *self, StringFormatter *fmt);
@@ -151,6 +152,38 @@ string_formatter_write_fmt(StringFormatter *fmt, str_t fmt_str, ...);
     ASSERT_OK(string_formatter_write(&fmt, S("\n"))); \
     ASSERT_OK(stream_writer_flush(&fmt.target)); \
 }                                                                     
+
+typedef struct PrintError PrintError;
+struct PrintError {
+    union {
+        FmtError fmt_error;
+        IOError io_error;
+        int value;
+    };
+    enum {
+        PRINT_ERROR_KIND_FMT_ERROR,
+        PRINT_ERROR_KIND_IO_ERROR,
+    } kind;
+};
+
+// TODO 
+#define imm_print_fmt(fmt_str, args...) ({ \
+    PrintError err = 0; \
+    do { \
+        auto fmt = string_formatter_default(&g_ctx.stdout_sw); \
+        err.fmt_error = string_formatter_write_fmt(&fmt, fmt_str, ##args); \
+        if (IS_ERR(err)) {  \
+            err.kind = PRINT_ERROR_KIND_FMT_ERROR; \
+            break;  \
+        } \
+        err.io_error = stream_writer_flush(&fmt.target); \
+        if (IS_ERR(err)) {  \
+            err.kind = PRINT_ERROR_KIND_IO_ERROR; \
+            break;  \
+        } \
+    } while (0); \
+    err; \
+})                                                                     
 
 
 #undef CORE_FMT_H
